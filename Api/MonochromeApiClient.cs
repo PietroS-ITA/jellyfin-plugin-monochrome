@@ -293,6 +293,54 @@ public class MonochromeApiClient
     }
 
     /// <summary>
+    /// Gets track radio (recommended similar tracks) by track ID.
+    /// </summary>
+    public async Task<List<TidalTrackItem>> GetTrackRadioAsync(long trackId, int limit = 50, CancellationToken cancellationToken = default)
+    {
+        var token = await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+        var countryCode = string.IsNullOrWhiteSpace(Config.CountryCode) ? "IT" : Config.CountryCode.ToUpperInvariant();
+        var url = $"{TidalApiBase}/tracks/{trackId}/radio?limit={limit}&countryCode={countryCode}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return new List<TidalTrackItem>();
+        }
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var result = JsonSerializer.Deserialize<TidalPagedList<TidalTrackItem>>(json);
+
+        return result?.Items ?? new List<TidalTrackItem>();
+    }
+
+    /// <summary>
+    /// Gets artist radio (recommended tracks for an artist) by artist ID.
+    /// </summary>
+    public async Task<List<TidalTrackItem>> GetArtistRadioAsync(long artistId, int limit = 50, CancellationToken cancellationToken = default)
+    {
+        var token = await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+        var countryCode = string.IsNullOrWhiteSpace(Config.CountryCode) ? "IT" : Config.CountryCode.ToUpperInvariant();
+        var url = $"{TidalApiBase}/artists/{artistId}/radio?limit={limit}&countryCode={countryCode}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return new List<TidalTrackItem>();
+        }
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var result = JsonSerializer.Deserialize<TidalPagedList<TidalTrackItem>>(json);
+
+        return result?.Items ?? new List<TidalTrackItem>();
+    }
+
+    /// <summary>
     /// Resolves playable audio stream URL for a given track.
     /// </summary>
     public async Task<ResolvedStream> ResolveTrackStreamAsync(long trackId, string? qualityOverride = null, CancellationToken cancellationToken = default)

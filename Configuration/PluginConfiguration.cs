@@ -17,7 +17,7 @@ public class PluginConfiguration : BasePluginConfiguration
         CountryCode = "IT";
         UseDirectTidalApi = true;
         CustomToken = string.Empty;
-        EnableChannel = true;
+        EnableChannel = false;
         EnableStreamProxy = false;
         StrmLibraryPath = string.Empty;
         SearchLimit = 25;

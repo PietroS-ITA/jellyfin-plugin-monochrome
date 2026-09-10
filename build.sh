@@ -20,7 +20,7 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="1.3.2.0"
+VERSION="1.3.3.0"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
 mkdir -p "$PACKAGE_DIR"
@@ -52,11 +52,19 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "versions": [
       {
         "version": "${VERSION}",
-        "changelog": "Risolto definitivamente il problema della ricerca globale: risoluzione nativa del Canale 'Monochrome Music' come TopParentId per l'accesso utente (superando il filtro di sicurezza FilterByUserAccessAsync in assenza di una libreria Musica locale), esecuzione fully asynchronous del search provider senza deadlock. Sostituite le immagini con icone ad alta risoluzione e copertine Tidal funzionanti (eliminando le icone '?').",
+        "changelog": "Esperienza streaming stile Spotify: 1) Monochrome Music rimosso dalla Home e dai tab superiori (canale disattivato di default). 2) Ricerca globale completa con risultati multipli (brani prioritari 0.98f, album 0.95f, artisti 0.90f) superando il filtro TopParentId di Jellyfin 12.0. 3) Salvataggio nei Preferiti (♥) e Playlist utente senza salvare file fisici su disco. 4) Autoplay radio e Instant Mix automatico basato su stile e genere tramite ILocalSimilarItemsProvider e TIDAL Radio.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_${VERSION}.zip",
         "checksum": "${MD5_CHECKSUM}",
         "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
+        "version": "1.3.2.0",
+        "changelog": "Risolto definitivamente il problema della ricerca globale: risoluzione nativa del Canale 'Monochrome Music' come TopParentId per l'accesso utente (superando il filtro di sicurezza FilterByUserAccessAsync in assenza di una libreria Musica locale), esecuzione fully asynchronous del search provider senza deadlock. Sostituite le immagini con icone ad alta risoluzione e copertine Tidal funzionanti (eliminando le icone '?').",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.2.0.zip",
+        "checksum": "d4f5a0f4145ae8585bef5b7110e7d783",
+        "timestamp": "2026-09-10T13:20:14Z"
       },
       {
         "version": "1.3.1.0",

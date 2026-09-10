@@ -75,7 +75,7 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
     /// <inheritdoc />
     public bool IsEnabledFor(string userId)
     {
-        return Plugin.Instance?.Configuration.EnableChannel ?? true;
+        return Plugin.Instance?.Configuration.EnableChannel ?? false;
     }
 
     /// <inheritdoc />

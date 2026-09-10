@@ -2,8 +2,10 @@ using Jellyfin.Plugin.Monochrome.Api;
 using Jellyfin.Plugin.Monochrome.Channels;
 using Jellyfin.Plugin.Monochrome.Providers;
 using Jellyfin.Plugin.Monochrome.Search;
+using Jellyfin.Plugin.Monochrome.Similar;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
+using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,6 +27,11 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ISearchProvider>(sp => sp.GetRequiredService<MonochromeSearchProvider>());
         serviceCollection.AddSingleton<IExternalSearchProvider>(sp => sp.GetRequiredService<MonochromeSearchProvider>());
         serviceCollection.AddSingleton<IMediaSourceProvider, MonochromeMediaSourceProvider>();
+
+        // Similar tracks, Instant Mix, and autoplay radio
+        serviceCollection.AddSingleton<MonochromeSimilarItemsProvider>();
+        serviceCollection.AddSingleton<ILocalSimilarItemsProvider<Audio>>(sp => sp.GetRequiredService<MonochromeSimilarItemsProvider>());
+        serviceCollection.AddSingleton<ISimilarItemsProvider>(sp => sp.GetRequiredService<MonochromeSimilarItemsProvider>());
     }
 }
 

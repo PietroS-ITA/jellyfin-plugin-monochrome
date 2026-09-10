@@ -5,6 +5,10 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Monochrome.Api;
+using Jellyfin.Plugin.Monochrome.Search;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -12,29 +16,38 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.Monochrome.Controllers;
 
 /// <summary>
-/// API Controller exposing Monochrome Music actions, stream resolution, search, and STRM export.
+/// API Controller exposing Monochrome Music actions, stream resolution, search, radio, and STRM export.
 /// </summary>
 [ApiController]
 [Route("Monochrome")]
 public class MonochromeController : ControllerBase
 {
     private readonly MonochromeApiClient _apiClient;
+    private readonly MonochromeSearchProvider _searchProvider;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILibraryManager _libraryManager;
+    private readonly IUserManager _userManager;
+    private readonly IUserDataManager _userDataManager;
     private readonly ILogger<MonochromeController> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MonochromeController"/> class.
     /// </summary>
-    /// <param name="apiClient">The API client.</param>
-    /// <param name="httpClientFactory">The HTTP client factory.</param>
-    /// <param name="logger">The logger.</param>
     public MonochromeController(
         MonochromeApiClient apiClient,
+        MonochromeSearchProvider searchProvider,
         IHttpClientFactory httpClientFactory,
+        ILibraryManager libraryManager,
+        IUserManager userManager,
+        IUserDataManager userDataManager,
         ILogger<MonochromeController> logger)
     {
         _apiClient = apiClient;
+        _searchProvider = searchProvider;
         _httpClientFactory = httpClientFactory;
+        _libraryManager = libraryManager;
+        _userManager = userManager;
+        _userDataManager = userDataManager;
         _logger = logger;
     }
 
@@ -329,6 +342,85 @@ public class MonochromeController : ControllerBase
                 success = false,
                 message = ex.Message
             });
+        }
+    }
+
+    /// <summary>
+    /// Gets track radio / similar tracks in the same style for a given track.
+    /// </summary>
+    [HttpGet("Radio")]
+    public async Task<IActionResult> GetRadio([FromQuery] long trackId, [FromQuery] int limit = 30, CancellationToken cancellationToken = default)
+    {
+        if (trackId <= 0)
+        {
+            return BadRequest(new { error = "Invalid trackId" });
+        }
+
+        try
+        {
+            var tracks = await _apiClient.GetTrackRadioAsync(trackId, limit, cancellationToken).ConfigureAwait(false);
+            return Ok(tracks);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get radio for track {TrackId}", trackId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Saves a track into the user's favorites (Spotify style, without saving physical files).
+    /// </summary>
+    [HttpPost("Favorite")]
+    public async Task<IActionResult> SetFavorite(
+        [FromQuery] long trackId,
+        [FromQuery] Guid userId,
+        [FromQuery] bool isFavorite = true,
+        CancellationToken cancellationToken = default)
+    {
+        if (trackId <= 0)
+        {
+            return BadRequest(new { error = "Invalid trackId" });
+        }
+
+        var user = _userManager.GetUserById(userId);
+        if (user == null)
+        {
+            return NotFound(new { error = "User not found." });
+        }
+
+        try
+        {
+            var trackGuid = MonochromeSearchProvider.GetDeterministicGuid($"monochrome_track_{trackId}");
+            var item = _libraryManager.GetItemById(trackGuid);
+            if (item == null)
+            {
+                var track = await _apiClient.GetTrackAsync(trackId, cancellationToken).ConfigureAwait(false);
+                if (track == null)
+                {
+                    return NotFound(new { error = "Track not found on TIDAL/Monochrome." });
+                }
+
+                var parentFolder = _searchProvider.GetMusicParentFolder(userId);
+                item = await _searchProvider.EnsureTrackItemAsync(trackGuid, track, parentFolder, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (item != null)
+            {
+                var dataDto = new UpdateUserItemDataDto
+                {
+                    IsFavorite = isFavorite
+                };
+                _userDataManager.SaveUserData(user, item, dataDto, UserDataSaveReason.UpdateUserData);
+                return Ok(new { success = true, trackId, isFavorite });
+            }
+
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Could not index track for favoriting." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to favorite track {TrackId}", trackId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = ex.Message });
         }
     }
 
