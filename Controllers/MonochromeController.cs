@@ -332,3 +332,4 @@ public class MonochromeController : ControllerBase
         return sb.ToString().Trim();
     }
 }
+

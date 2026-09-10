@@ -20,3 +20,4 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IChannel, MonochromeChannel>();
     }
 }
+

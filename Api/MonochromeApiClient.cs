@@ -474,3 +474,4 @@ public class MonochromeApiClient
         return $"https://resources.tidal.com/images/{path}/{size}x{size}.jpg";
     }
 }
+

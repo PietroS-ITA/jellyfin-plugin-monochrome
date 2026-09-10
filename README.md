@@ -80,9 +80,16 @@ Plugin nativo per **Jellyfin 12.0** (.NET 10 / `net10.0`) per integrare, ascolta
    sudo systemctl restart jellyfin
    ```
 
-### Metodo 2: Tramite Repository Jellyfin
+### Metodo 2: Tramite Repository Jellyfin (Consigliato)
 
-Se disponi di un web server locale o remoto, puoi caricare il contenuto della cartella `dist/` (incluso `manifest.json` e il file `.zip`) e aggiungere l'URL del `manifest.json` in **Dashboard -> Plugin -> Repository** di Jellyfin.
+Puoi aggiungere il plugin direttamente dal catalogo di Jellyfin tramite questo manifest repository:
+
+1. Apri la **Dashboard di Jellyfin** -> **Plugin** -> scheda **Repository**.
+2. Clicca su **+** per aggiungere un repository:
+   - **Nome**: `Monochrome Music`
+   - **URL Repository**: `https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/manifest.json`
+3. Clicca su **Salva**.
+4. Vai nella scheda **Catalogo**, seleziona **Monochrome Music** e clicca **Installa**!
 
 ---
 
@@ -141,3 +148,4 @@ Il plugin può essere ricompilato ed esteso con:
 ./build.sh
 ```
 I file compilati e il pacchetto `.zip` verranno generati automaticamente nella cartella `dist/`.
+

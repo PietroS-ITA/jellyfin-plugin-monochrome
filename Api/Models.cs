@@ -186,3 +186,4 @@ public class ResolvedStream
     public int? SampleRate { get; set; }
     public string Quality { get; set; } = "LOSSLESS";
 }
+

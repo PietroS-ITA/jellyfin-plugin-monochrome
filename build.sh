@@ -47,14 +47,14 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "name": "Monochrome Music",
     "description": "Stream and browse lossless Hi-Res music from Monochrome and TIDAL in Jellyfin 12.0.",
     "overview": "Monochrome Music provider and channel for Jellyfin 12.0",
-    "owner": "nzo66",
+    "owner": "PietroS-ITA",
     "category": "Live TV & Channels / Music",
     "versions": [
       {
         "version": "${VERSION}",
         "changelog": "Initial release for Jellyfin 12.0 (.NET 10). Supports native Channel browsing, direct FLAC/Lossless streaming, STRM export, and REST API controller.",
         "targetAbi": "12.0.0.0",
-        "sourceUrl": "https://raw.githubusercontent.com/nzo66/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_${VERSION}.zip",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_${VERSION}.zip",
         "checksum": "${MD5_CHECKSUM}",
         "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
       }

@@ -58,3 +58,4 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         };
     }
 }
+

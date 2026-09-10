@@ -69,3 +69,4 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public int SearchLimit { get; set; }
 }
+

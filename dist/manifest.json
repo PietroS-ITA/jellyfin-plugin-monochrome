@@ -4,14 +4,14 @@
     "name": "Monochrome Music",
     "description": "Stream and browse lossless Hi-Res music from Monochrome and TIDAL in Jellyfin 12.0.",
     "overview": "Monochrome Music provider and channel for Jellyfin 12.0",
-    "owner": "nzo66",
+    "owner": "PietroS-ITA",
     "category": "Live TV & Channels / Music",
     "versions": [
       {
         "version": "1.0.0.0",
         "changelog": "Initial release for Jellyfin 12.0 (.NET 10). Supports native Channel browsing, direct FLAC/Lossless streaming, STRM export, and REST API controller.",
         "targetAbi": "12.0.0.0",
-        "sourceUrl": "https://raw.githubusercontent.com/nzo66/jellyfin-plugin-monochrome/main/dist/Jellyfin.Plugin.Monochrome_1.0.0.0.zip",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/Jellyfin.Plugin.Monochrome_1.0.0.0.zip",
         "checksum": "4d9a35a43dadd8de65947652f2306729",
         "timestamp": "2026-09-10T10:00:00Z"
       }
