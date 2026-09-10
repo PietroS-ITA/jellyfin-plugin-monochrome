@@ -20,10 +20,9 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="1.0.0.0"
+VERSION="1.1.0.0"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
-rm -rf "$DIST_DIR"
 mkdir -p "$PACKAGE_DIR"
 
 echo "=== Packaging plugin into $PACKAGE_DIR ==="
@@ -34,6 +33,7 @@ cp "$OUTPUT_DIR/${PLUGIN_NAME}.deps.json" "$PACKAGE_DIR/"
 # Create zip archive for distribution
 cd "$DIST_DIR"
 zip -r "${PLUGIN_NAME}_${VERSION}.zip" "${PLUGIN_NAME}_${VERSION}" >/dev/null
+rm -rf "$PACKAGE_DIR"
 
 # Generate SHA256 and MD5 checksums
 SHA256_CHECKSUM=$(sha256sum "${PLUGIN_NAME}_${VERSION}.zip" | awk '{print $1}')
@@ -52,11 +52,19 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "versions": [
       {
         "version": "${VERSION}",
-        "changelog": "Initial release for Jellyfin 12.0 (.NET 10). Supports native Channel browsing, direct FLAC/Lossless streaming, STRM export, and REST API controller.",
+        "changelog": "Aggiunta interfaccia di ricerca libera nel menu principale di Jellyfin, sincronizzazione delle ricerche recenti nel Canale, e esportazione 1-click STRM nella libreria musicale.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_${VERSION}.zip",
         "checksum": "${MD5_CHECKSUM}",
         "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
+        "version": "1.0.0.0",
+        "changelog": "Initial release for Jellyfin 12.0 (.NET 10). Supports native Channel browsing, direct FLAC/Lossless streaming, STRM export, and REST API controller.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/Jellyfin.Plugin.Monochrome_1.0.0.0.zip",
+        "checksum": "4d9a35a43dadd8de65947652f2306729",
+        "timestamp": "2026-09-10T10:00:00Z"
       }
     ]
   }

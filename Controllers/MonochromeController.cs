@@ -288,6 +288,47 @@ public class MonochromeController : ControllerBase
     }
 
     /// <summary>
+    /// Gets the list of recent or saved searches.
+    /// </summary>
+    [HttpGet("RecentSearches")]
+    public IActionResult GetRecentSearches()
+    {
+        var searches = Plugin.Instance?.Configuration.RecentSearches ?? new List<string>();
+        return Ok(searches);
+    }
+
+    /// <summary>
+    /// Adds a query to recent searches so it appears in the Search UI chips and in the Channel folder.
+    /// </summary>
+    [HttpPost("RecentSearch")]
+    public IActionResult AddRecentSearch([FromQuery] string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return BadRequest(new { error = "Query cannot be empty" });
+        }
+
+        query = query.Trim();
+        var config = Plugin.Instance?.Configuration;
+        if (config != null)
+        {
+            config.RecentSearches ??= new List<string>();
+            config.RecentSearches.RemoveAll(q => q.Equals(query, StringComparison.OrdinalIgnoreCase));
+            config.RecentSearches.Insert(0, query);
+
+            // Limit to 25 items
+            if (config.RecentSearches.Count > 25)
+            {
+                config.RecentSearches.RemoveRange(25, config.RecentSearches.Count - 25);
+            }
+
+            Plugin.Instance?.SaveConfiguration();
+        }
+
+        return Ok(new { success = true, query });
+    }
+
+    /// <summary>
     /// Tests connectivity with TIDAL / Monochrome APIs.
     /// </summary>
     [HttpGet("TestConnection")]

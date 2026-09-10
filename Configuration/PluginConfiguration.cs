@@ -21,6 +21,17 @@ public class PluginConfiguration : BasePluginConfiguration
         EnableStreamProxy = false;
         StrmLibraryPath = string.Empty;
         SearchLimit = 25;
+        RecentSearches = new List<string>
+        {
+            "Daft Punk",
+            "Pink Floyd",
+            "The Weeknd",
+            "Taylor Swift",
+            "Radiohead",
+            "Queen",
+            "Billie Eilish",
+            "Miles Davis"
+        };
     }
 
     /// <summary>
@@ -68,5 +79,10 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the search limit.
     /// </summary>
     public int SearchLimit { get; set; }
+
+    /// <summary>
+    /// Gets or sets the recent or saved searches.
+    /// </summary>
+    public List<string> RecentSearches { get; set; }
 }
 

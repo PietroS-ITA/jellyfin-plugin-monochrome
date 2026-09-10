@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="utf-8">
+    <title>Monochrome Music - Ricerca</title>
+    <style>
+        .monochrome-search-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1.5em;
+            color: #fff;
+            font-family: inherit;
+        }
+        .monochrome-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.5em;
+            flex-wrap: wrap;
+            gap: 1em;
+        }
+        .monochrome-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5em;
+            margin: 0;
+            font-size: 2em;
+            font-weight: 700;
+        }
+        .monochrome-search-box {
+            display: flex;
+            gap: 0.5em;
+            margin-bottom: 1em;
+            position: relative;
+        }
+        .monochrome-input {
+            flex: 1;
+            padding: 0.9em 1.2em;
+            font-size: 1.1em;
+            border-radius: 30px;
+            border: 2px solid #333;
+            background: #181818;
+            color: #fff;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .monochrome-input:focus {
+            border-color: #00a4dc;
+            box-shadow: 0 0 10px rgba(0, 164, 220, 0.4);
+        }
+        .monochrome-search-btn {
+            border-radius: 30px;
+            padding: 0 1.8em;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            background: #00a4dc;
+            color: #fff;
+            border: none;
+            transition: background 0.2s;
+        }
+        .monochrome-search-btn:hover {
+            background: #0088b6;
+        }
+        .monochrome-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5em;
+            margin-bottom: 1.5em;
+            align-items: center;
+        }
+        .monochrome-chip-label {
+            font-size: 0.85em;
+            color: #888;
+            margin-right: 0.3em;
+        }
+        .monochrome-chip {
+            background: #252525;
+            border: 1px solid #3a3a3a;
+            color: #ccc;
+            padding: 0.3em 0.8em;
+            border-radius: 20px;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .monochrome-chip:hover {
+            background: #00a4dc;
+            color: #fff;
+            border-color: #00a4dc;
+        }
+        .monochrome-tabs {
+            display: flex;
+            gap: 1em;
+            border-bottom: 2px solid #282828;
+            margin-bottom: 1.5em;
+        }
+        .monochrome-tab {
+            padding: 0.6em 1.2em;
+            cursor: pointer;
+            font-weight: 600;
+            color: #888;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: color 0.2s, border-color 0.2s;
+        }
+        .monochrome-tab.active {
+            color: #00a4dc;
+            border-bottom-color: #00a4dc;
+        }
+        .monochrome-results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1.2em;
+            margin-bottom: 2.5em;
+        }
+        .monochrome-card {
+            background: #1e1e1e;
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 1px solid #2a2a2a;
+        }
+        .monochrome-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+            border-color: #3f3f3f;
+        }
+        .monochrome-card-img-container {
+            position: relative;
+            width: 100%;
+            padding-top: 100%;
+            background: #111;
+        }
+        .monochrome-card-img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .monochrome-card-content {
+            padding: 0.8em;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .monochrome-card-title {
+            font-weight: 600;
+            font-size: 0.95em;
+            margin: 0 0 0.3em 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .monochrome-card-sub {
+            font-size: 0.8em;
+            color: #aaa;
+            margin: 0 0 0.8em 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .monochrome-card-actions {
+            display: flex;
+            gap: 0.4em;
+        }
+        .btn-action {
+            flex: 1;
+            padding: 0.4em;
+            border-radius: 6px;
+            border: none;
+            font-size: 0.8em;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.3em;
+        }
+        .btn-play {
+            background: #00a4dc;
+            color: #fff;
+        }
+        .btn-play:hover {
+            background: #0088b6;
+        }
+        .btn-export {
+            background: #2d3748;
+            color: #e2e8f0;
+        }
+        .btn-export:hover {
+            background: #4a5568;
+        }
+        .monochrome-track-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5em;
+            margin-bottom: 2em;
+        }
+        .monochrome-track-row {
+            display: flex;
+            align-items: center;
+            padding: 0.6em 1em;
+            background: #1a1a1a;
+            border-radius: 8px;
+            gap: 1em;
+            border: 1px solid #262626;
+            transition: background 0.2s;
+        }
+        .monochrome-track-row:hover {
+            background: #242424;
+        }
+        .monochrome-track-thumb {
+            width: 48px;
+            height: 48px;
+            border-radius: 6px;
+            object-fit: cover;
+            background: #111;
+        }
+        .monochrome-track-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .monochrome-track-title {
+            font-weight: 600;
+            font-size: 0.95em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .monochrome-track-meta {
+            font-size: 0.8em;
+            color: #888;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .monochrome-badge {
+            font-size: 0.7em;
+            padding: 0.2em 0.5em;
+            border-radius: 4px;
+            background: #2b6cb0;
+            color: #fff;
+            font-weight: bold;
+        }
+        .monochrome-badge.hires {
+            background: #d69e2e;
+            color: #000;
+        }
+        .monochrome-toast {
+            position: fixed;
+            bottom: 2em;
+            right: 2em;
+            background: #234e52;
+            color: #e6fffa;
+            border: 1px solid #319795;
+            padding: 0.8em 1.5em;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            display: none;
+            z-index: 10000;
+            font-weight: 600;
+        }
+        .monochrome-player-bar {
+            position: sticky;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #121212;
+            border-top: 1px solid #2b2b2b;
+            padding: 0.8em 1.5em;
+            display: none;
+            align-items: center;
+            gap: 1.5em;
+            z-index: 999;
+            box-shadow: 0 -4px 15px rgba(0,0,0,0.6);
+        }
+        .monochrome-player-bar audio {
+            flex: 1;
+            height: 36px;
+        }
+    </style>
+</head>
+<body>
+    <div id="MonochromeSearchPage" data-role="page" class="page type-interior">
+        <div class="monochrome-search-container">
+            <div class="monochrome-header">
+                <h1 class="monochrome-title">
+                    <span>🎵</span> Monochrome Music Search
+                </h1>
+                <a href="#!/configurationpage?name=Monochrome" class="monochrome-chip" style="text-decoration: none;">
+                    ⚙️ Impostazioni Plugin
+                </a>
+            </div>
+
+            <!-- Search bar -->
+            <form id="MonochromeSearchForm" class="monochrome-search-box">
+                <input type="search" id="SearchQueryInput" class="monochrome-input" placeholder="Cerca qualsiasi brano, album o artista (es. Daft Punk, Queen, The Weeknd...)" autocomplete="off" autofocus />
+                <button type="submit" class="monochrome-search-btn">Cerca</button>
+            </form>
+
+            <!-- Quick / Recent Chips -->
+            <div id="MonochromeChipsContainer" class="monochrome-chips">
+                <span class="monochrome-chip-label">Ricerche frequenti:</span>
+                <!-- Populated dynamically -->
+            </div>
+
+            <!-- Tabs -->
+            <div class="monochrome-tabs">
+                <div class="monochrome-tab active" data-tab="all">Tutti i Risultati</div>
+                <div class="monochrome-tab" data-tab="tracks">Brani</div>
+                <div class="monochrome-tab" data-tab="albums">Album</div>
+                <div class="monochrome-tab" data-tab="artists">Artisti</div>
+            </div>
+
+            <!-- Results container -->
+            <div id="SearchResultsView">
+                <div id="EmptyState" style="text-align: center; padding: 4em 1em; color: #777;">
+                    <div style="font-size: 3em; margin-bottom: 0.3em;">🔍</div>
+                    <div style="font-size: 1.2em; font-weight: 600;">Digita il nome di un brano, artista o album sopra per iniziare.</div>
+                    <p style="font-size: 0.9em; margin-top: 0.5em;">Streaming diretto in qualità Lossless / FLAC e Hi-Res su Jellyfin.</p>
+                </div>
+
+                <div id="LoadingState" style="display: none; text-align: center; padding: 4em 1em; color: #00a4dc;">
+                    <div style="font-size: 1.5em; font-weight: 600;">Ricerca in corso nel catalogo Monochrome / TIDAL...</div>
+                </div>
+
+                <!-- Sections -->
+                <div id="TracksSection" style="display: none;">
+                    <h2 style="font-size: 1.3em; margin: 1em 0 0.6em; color: #e2e8f0;">Brani</h2>
+                    <div id="TracksList" class="monochrome-track-list"></div>
+                </div>
+
+                <div id="AlbumsSection" style="display: none;">
+                    <h2 style="font-size: 1.3em; margin: 1em 0 0.6em; color: #e2e8f0;">Album</h2>
+                    <div id="AlbumsGrid" class="monochrome-results-grid"></div>
+                </div>
+
+                <div id="ArtistsSection" style="display: none;">
+                    <h2 style="font-size: 1.3em; margin: 1em 0 0.6em; color: #e2e8f0;">Artisti</h2>
+                    <div id="ArtistsGrid" class="monochrome-results-grid"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Floating Player Bar -->
+        <div id="PlayerBar" class="monochrome-player-bar">
+            <img id="PlayerThumb" src="" style="width: 44px; height: 44px; border-radius: 6px; object-fit: cover;" />
+            <div style="min-width: 180px; max-width: 260px;">
+                <div id="PlayerTitle" style="font-weight: 600; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+                <div id="PlayerArtist" style="font-size: 0.75em; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+            </div>
+            <audio id="AudioPlayer" controls autoplay></audio>
+        </div>
+
+        <!-- Toast notification -->
+        <div id="MonochromeToast" class="monochrome-toast"></div>
+
+        <script type="text/javascript">
+            (function () {
+                let currentSearchData = null;
+                let activeTab = 'all';
+
+                const searchInput = document.getElementById('SearchQueryInput');
+                const searchForm = document.getElementById('MonochromeSearchForm');
+                const chipsContainer = document.getElementById('MonochromeChipsContainer');
+                const tabs = document.querySelectorAll('.monochrome-tab');
+                const emptyState = document.getElementById('EmptyState');
+                const loadingState = document.getElementById('LoadingState');
+                const tracksSection = document.getElementById('TracksSection');
+                const tracksList = document.getElementById('TracksList');
+                const albumsSection = document.getElementById('AlbumsSection');
+                const albumsGrid = document.getElementById('AlbumsGrid');
+                const artistsSection = document.getElementById('ArtistsSection');
+                const artistsGrid = document.getElementById('ArtistsGrid');
+                const playerBar = document.getElementById('PlayerBar');
+                const playerThumb = document.getElementById('PlayerThumb');
+                const playerTitle = document.getElementById('PlayerTitle');
+                const playerArtist = document.getElementById('PlayerArtist');
+                const audioPlayer = document.getElementById('AudioPlayer');
+                const toast = document.getElementById('MonochromeToast');
+
+                function showToast(message) {
+                    toast.innerText = message;
+                    toast.style.display = 'block';
+                    setTimeout(function () {
+                        toast.style.display = 'none';
+                    }, 4000);
+                }
+
+                function formatDuration(sec) {
+                    const m = Math.floor(sec / 60);
+                    const s = sec % 60;
+                    return m + ':' + (s < 10 ? '0' : '') + s;
+                }
+
+                function getCoverUrl(coverId, size) {
+                    if (!coverId) return '';
+                    return 'https://resources.tidal.com/images/' + coverId.replace(/-/g, '/') + '/' + (size || 320) + 'x' + (size || 320) + '.jpg';
+                }
+
+                function loadChips() {
+                    ApiClient.fetch({
+                        url: ApiClient.getUrl('Monochrome/RecentSearches'),
+                        type: 'GET'
+                    }).then(function (res) {
+                        return res.json();
+                    }).then(function (queries) {
+                        if (!queries || !queries.length) return;
+                        chipsContainer.innerHTML = '<span class="monochrome-chip-label">Ricerche recenti:</span>';
+                        queries.slice(0, 10).forEach(function (q) {
+                            const chip = document.createElement('span');
+                            chip.className = 'monochrome-chip';
+                            chip.innerText = q;
+                            chip.onclick = function () {
+                                searchInput.value = q;
+                                performSearch(q);
+                            };
+                            chipsContainer.appendChild(chip);
+                        });
+                    }).catch(function () {});
+                }
+
+                function saveRecentSearch(query) {
+                    ApiClient.fetch({
+                        url: ApiClient.getUrl('Monochrome/RecentSearch?query=' + encodeURIComponent(query)),
+                        type: 'POST'
+                    }).catch(function () {});
+                }
+
+                function playTrack(trackId, title, artist, coverUrl) {
+                    playerThumb.src = coverUrl || '';
+                    playerTitle.innerText = title;
+                    playerArtist.innerText = artist;
+                    playerBar.style.display = 'flex';
+
+                    const streamUrl = ApiClient.getUrl('Monochrome/Stream?trackId=' + trackId);
+                    audioPlayer.src = streamUrl;
+                    audioPlayer.play().catch(function (e) {
+                        console.warn('Autoplay prevented:', e);
+                    });
+
+                    showToast('▶ In riproduzione: ' + title);
+                }
+
+                function exportAlbum(albumId, title) {
+                    showToast('📥 Esportazione album "' + title + '" in corso...');
+                    ApiClient.fetch({
+                        url: ApiClient.getUrl('Monochrome/ExportStrm?albumId=' + albumId),
+                        type: 'POST'
+                    }).then(function (res) {
+                        return res.json();
+                    }).then(function (data) {
+                        if (data && data.success) {
+                            showToast('✓ Album esportato con successo (' + data.trackCount + ' tracce)!');
+                        } else {
+                            showToast('✗ Esportazione fallita: ' + (data?.error || 'Errore'));
+                        }
+                    }).catch(function (err) {
+                        showToast('✗ Errore esportazione: ' + err.message);
+                    });
+                }
+
+                function renderResults() {
+                    if (!currentSearchData) return;
+
+                    const tracks = currentSearchData.tracks?.items || [];
+                    const albums = currentSearchData.albums?.items || [];
+                    const artists = currentSearchData.artists?.items || [];
+
+                    emptyState.style.display = 'none';
+                    loadingState.style.display = 'none';
+
+                    // Filter by active tab
+                    const showTracks = (activeTab === 'all' || activeTab === 'tracks') && tracks.length > 0;
+                    const showAlbums = (activeTab === 'all' || activeTab === 'albums') && albums.length > 0;
+                    const showArtists = (activeTab === 'all' || activeTab === 'artists') && artists.length > 0;
+
+                    tracksSection.style.display = showTracks ? 'block' : 'none';
+                    albumsSection.style.display = showAlbums ? 'block' : 'none';
+                    artistsSection.style.display = showArtists ? 'block' : 'none';
+
+                    // 1. Render Tracks
+                    if (showTracks) {
+                        tracksList.innerHTML = '';
+                        tracks.forEach(function (t) {
+                            const artistName = t.artist?.name || t.artists?.[0]?.name || 'Artista';
+                            const cover = getCoverUrl(t.album?.cover, 160);
+                            const duration = formatDuration(t.duration || 0);
+
+                            const row = document.createElement('div');
+                            row.className = 'monochrome-track-row';
+                            row.innerHTML =
+                                '<img class="monochrome-track-thumb" src="' + cover + '" loading="lazy" />' +
+                                '<div class="monochrome-track-info">' +
+                                    '<div class="monochrome-track-title">' + t.title + '</div>' +
+                                    '<div class="monochrome-track-meta">' + artistName + ' • ' + (t.album?.title || '') + '</div>' +
+                                '</div>' +
+                                '<span class="monochrome-badge ' + (t.audioQuality === 'HI_RES_LOSSLESS' ? 'hires' : '') + '">' +
+                                    (t.audioQuality === 'HI_RES_LOSSLESS' ? 'HI-RES' : 'FLAC') +
+                                '</span>' +
+                                '<span style="color: #777; font-size: 0.85em;">' + duration + '</span>' +
+                                '<button class="btn-action btn-play" style="flex: 0 0 auto; padding: 0.4em 1em;">▶ Ascolta</button>';
+
+                            row.querySelector('.btn-play').onclick = function () {
+                                playTrack(t.id, t.title, artistName, cover);
+                            };
+
+                            tracksList.appendChild(row);
+                        });
+                    }
+
+                    // 2. Render Albums
+                    if (showAlbums) {
+                        albumsGrid.innerHTML = '';
+                        albums.forEach(function (al) {
+                            const artistName = al.artist?.name || al.artists?.[0]?.name || '';
+                            const cover = getCoverUrl(al.cover, 320);
+
+                            const card = document.createElement('div');
+                            card.className = 'monochrome-card';
+                            card.innerHTML =
+                                '<div class="monochrome-card-img-container">' +
+                                    '<img class="monochrome-card-img" src="' + cover + '" loading="lazy" />' +
+                                '</div>' +
+                                '<div class="monochrome-card-content">' +
+                                    '<div class="monochrome-card-title" title="' + al.title + '">' + al.title + '</div>' +
+                                    '<div class="monochrome-card-sub">' + artistName + '</div>' +
+                                    '<div class="monochrome-card-actions">' +
+                                        '<button class="btn-action btn-export" title="Esporta come file .strm nella libreria Jellyfin">📥 Esporta STRM</button>' +
+                                    '</div>' +
+                                '</div>';
+
+                            card.querySelector('.btn-export').onclick = function () {
+                                exportAlbum(al.id, al.title);
+                            };
+
+                            albumsGrid.appendChild(card);
+                        });
+                    }
+
+                    // 3. Render Artists
+                    if (showArtists) {
+                        artistsGrid.innerHTML = '';
+                        artists.forEach(function (art) {
+                            const picture = getCoverUrl(art.picture, 320);
+
+                            const card = document.createElement('div');
+                            card.className = 'monochrome-card';
+                            card.innerHTML =
+                                '<div class="monochrome-card-img-container" style="border-radius: 50%; overflow: hidden; width: 80%; margin: 10% auto 0; padding-top: 80%;">' +
+                                    '<img class="monochrome-card-img" src="' + picture + '" loading="lazy" />' +
+                                '</div>' +
+                                '<div class="monochrome-card-content" style="text-align: center;">' +
+                                    '<div class="monochrome-card-title">' + art.name + '</div>' +
+                                    '<div class="monochrome-card-sub">Artista</div>' +
+                                    '<button class="btn-action btn-play" style="width: 100%;">Cerca Brani</button>' +
+                                '</div>';
+
+                            card.querySelector('.btn-play').onclick = function () {
+                                searchInput.value = art.name;
+                                performSearch(art.name);
+                            };
+
+                            artistsGrid.appendChild(card);
+                        });
+                    }
+                }
+
+                function performSearch(query) {
+                    if (!query || !query.trim()) return;
+                    query = query.trim();
+
+                    emptyState.style.display = 'none';
+                    loadingState.style.display = 'block';
+                    tracksSection.style.display = 'none';
+                    albumsSection.style.display = 'none';
+                    artistsSection.style.display = 'none';
+
+                    saveRecentSearch(query);
+
+                    ApiClient.fetch({
+                        url: ApiClient.getUrl('Monochrome/Search?q=' + encodeURIComponent(query)),
+                        type: 'GET'
+                    }).then(function (res) {
+                        return res.json();
+                    }).then(function (data) {
+                        currentSearchData = data;
+                        renderResults();
+                        loadChips();
+                    }).catch(function (err) {
+                        loadingState.style.display = 'none';
+                        emptyState.style.display = 'block';
+                        showToast('✗ Errore nella ricerca: ' + (err.message || err));
+                    });
+                }
+
+                searchForm.addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    performSearch(searchInput.value);
+                    return false;
+                });
+
+                tabs.forEach(function (tab) {
+                    tab.addEventListener('click', function () {
+                        tabs.forEach(function (t) { t.classList.remove('active'); });
+                        tab.classList.add('active');
+                        activeTab = tab.dataset.tab;
+                        renderResults();
+                    });
+                });
+
+                document.getElementById('MonochromeSearchPage').addEventListener('pageshow', function () {
+                    loadChips();
+                });
+
+                loadChips();
+            })();
+        </script>
+    </div>
+</body>
+</html>

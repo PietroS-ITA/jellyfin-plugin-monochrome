@@ -94,20 +94,26 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
             return await GetTrendingItemsAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        // 3. Search category
-        if (folderId.Equals("search_menu", StringComparison.OrdinalIgnoreCase))
+        // 3. Recent / Saved Searches
+        if (folderId.Equals("recent_searches", StringComparison.OrdinalIgnoreCase))
         {
-            return GetSearchCategories();
+            return GetRecentSearchesFolder();
         }
 
-        // 4. Specific Search Query
+        // 4. Browse Genres
+        if (folderId.Equals("genres", StringComparison.OrdinalIgnoreCase))
+        {
+            return GetGenreFolders();
+        }
+
+        // 5. Specific Search Query
         if (folderId.StartsWith("search_q_", StringComparison.OrdinalIgnoreCase))
         {
             var searchQuery = folderId.Substring("search_q_".Length);
             return await ExecuteSearchItemsAsync(searchQuery, cancellationToken).ConfigureAwait(false);
         }
 
-        // 5. Album tracks view
+        // 6. Album tracks view
         if (folderId.StartsWith("album_", StringComparison.OrdinalIgnoreCase))
         {
             if (long.TryParse(folderId.Substring("album_".Length), out var albumId))
@@ -116,7 +122,7 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
             }
         }
 
-        // 6. Artist view (Top tracks and Albums)
+        // 7. Artist view (Top tracks and Albums)
         if (folderId.StartsWith("artist_", StringComparison.OrdinalIgnoreCase))
         {
             if (long.TryParse(folderId.Substring("artist_".Length), out var artistId))
@@ -125,7 +131,7 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
             }
         }
 
-        // 7. Artist Albums
+        // 8. Artist Albums
         if (folderId.StartsWith("art_albums_", StringComparison.OrdinalIgnoreCase))
         {
             if (long.TryParse(folderId.Substring("art_albums_".Length), out var artistId))
@@ -134,7 +140,7 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
             }
         }
 
-        // 8. Artist Top Tracks
+        // 9. Artist Top Tracks
         if (folderId.StartsWith("art_tracks_", StringComparison.OrdinalIgnoreCase))
         {
             if (long.TryParse(folderId.Substring("art_tracks_".Length), out var artistId))
@@ -161,12 +167,21 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
             },
             new ChannelItemInfo
             {
-                Id = "search_menu",
-                Name = "Search Music (Tracks, Albums, Artists)",
-                Overview = "Search across millions of Hi-Res FLAC tracks, albums, and artists.",
+                Id = "recent_searches",
+                Name = "Recent & Custom Searches",
+                Overview = "Browse your recent free searches and custom queries (synced with the Monochrome Search page).",
                 Type = ChannelItemType.Folder,
                 FolderType = ChannelFolderType.Container,
                 ImageUrl = "https://resources.tidal.com/images/7376c221/ca36/4134/9605/65c829e0839f/640x640.jpg"
+            },
+            new ChannelItemInfo
+            {
+                Id = "genres",
+                Name = "Browse by Genre & Style",
+                Overview = "Explore Pop, Rock, Hip-Hop, Electronic, Jazz, Classical, and more.",
+                Type = ChannelItemType.Folder,
+                FolderType = ChannelFolderType.Container,
+                ImageUrl = "https://resources.tidal.com/images/a8323a6f/b9ad/448d/9b7e/241d7a8d5df1/640x640.jpg"
             }
         };
 
@@ -177,15 +192,38 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
         };
     }
 
-    private ChannelItemResult GetSearchCategories()
+    private ChannelItemResult GetRecentSearchesFolder()
     {
-        // Provide convenient popular search presets
-        var presets = new[] { "Daft Punk", "Pink Floyd", "The Weeknd", "Taylor Swift", "Miles Davis", "Queen", "Billie Eilish", "Radiohead" };
-        var items = presets.Select(p => new ChannelItemInfo
+        var queries = Plugin.Instance?.Configuration.RecentSearches ?? new List<string>();
+        var items = queries.Select(q => new ChannelItemInfo
         {
-            Id = $"search_q_{Uri.EscapeDataString(p)}",
-            Name = $"Search: {p}",
-            Overview = $"Search catalogue for {p}",
+            Id = $"search_q_{Uri.EscapeDataString(q)}",
+            Name = $"Search: {q}",
+            Overview = $"Browse results for '{q}' in Monochrome / TIDAL HiFi.",
+            Type = ChannelItemType.Folder,
+            FolderType = ChannelFolderType.Container
+        }).ToList();
+
+        return new ChannelItemResult
+        {
+            Items = items,
+            TotalRecordCount = items.Count
+        };
+    }
+
+    private ChannelItemResult GetGenreFolders()
+    {
+        var genres = new[]
+        {
+            "Pop", "Rock", "Hip-Hop", "Electronic", "Jazz", "Classical",
+            "Metal", "Indie", "R&B", "Dance", "Reggae", "Blues", "Ambient", "Soundtrack"
+        };
+
+        var items = genres.Select(g => new ChannelItemInfo
+        {
+            Id = $"search_q_{Uri.EscapeDataString(g)}",
+            Name = $"Genre: {g}",
+            Overview = $"Top tracks and albums in {g}.",
             Type = ChannelItemType.Folder,
             FolderType = ChannelFolderType.Container
         }).ToList();

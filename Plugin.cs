@@ -46,14 +46,26 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         {
             new PluginPageInfo
             {
-                Name = "Monochrome",
+                Name = "MonochromeSearch",
                 DisplayName = "Monochrome Music",
+                EmbeddedResourcePath = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}.Web.searchPage.html",
+                    GetType().Namespace),
+                EnableInMainMenu = true,
+                MenuSection = "library",
+                MenuIcon = "search"
+            },
+            new PluginPageInfo
+            {
+                Name = "Monochrome",
+                DisplayName = "Monochrome Settings",
                 EmbeddedResourcePath = string.Format(
                     CultureInfo.InvariantCulture,
                     "{0}.Configuration.configPage.html",
                     GetType().Namespace),
-                EnableInMainMenu = true,
-                MenuIcon = "music_note"
+                EnableInMainMenu = false,
+                MenuIcon = "settings"
             }
         };
     }
