@@ -8,8 +8,16 @@
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.3.1.0",
+        "changelog": "Risolto definitivamente il problema della ricerca globale di Jellyfin che non mostrava canzoni: risoluzione reale del CollectionFolder genitore accessibile all'utente, superando il filtro di sicurezza FilterByUserAccessAsync di Jellyfin 12.0. Aggiornati retroattivamente tutti i brani memorizzati in precedenza. Sincronizzazione automatica delle ricerche nel Canale.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/Jellyfin.Plugin.Monochrome_1.3.1.0.zip",
+        "checksum": "3a1458c01af8930214133f4286986312",
+        "timestamp": "2026-09-10T12:54:18Z"
+      },
+      {
         "version": "1.3.0.0",
-        "changelog": "Risolto il problema della ricerca globale che non trovava risultati: corretta l'associazione della cartella genitore CollectionFolder per superare i filtri di accesso utente Jellyfin. Risolto l'errore di riproduzione 'file non supportato': implementato il download e la concatenazione sequenziale dei segmenti fMP4/FLAC con caching locale, abilitando riproduzione fluida, transcodifica e seeking per tutti i client.",
+        "changelog": "Risolto l'errore di riproduzione 'file non supportato': implementato il download e la concatenazione sequenziale dei segmenti fMP4/FLAC con caching locale, abilitando riproduzione fluida, transcodifica e seeking per tutti i client.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/Jellyfin.Plugin.Monochrome_1.3.0.0.zip",
         "checksum": "d6e3a170b0ed9880893736af89769781",

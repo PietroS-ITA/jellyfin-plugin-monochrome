@@ -21,8 +21,9 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHttpClient();
         serviceCollection.AddSingleton<MonochromeApiClient>();
         serviceCollection.AddSingleton<IChannel, MonochromeChannel>();
-        serviceCollection.AddSingleton<ISearchProvider, MonochromeSearchProvider>();
-        serviceCollection.AddSingleton<IExternalSearchProvider, MonochromeSearchProvider>();
+        serviceCollection.AddSingleton<MonochromeSearchProvider>();
+        serviceCollection.AddSingleton<ISearchProvider>(sp => sp.GetRequiredService<MonochromeSearchProvider>());
+        serviceCollection.AddSingleton<IExternalSearchProvider>(sp => sp.GetRequiredService<MonochromeSearchProvider>());
         serviceCollection.AddSingleton<IMediaSourceProvider, MonochromeMediaSourceProvider>();
     }
 }

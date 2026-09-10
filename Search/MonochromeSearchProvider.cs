@@ -124,6 +124,8 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
             yield break;
         }
 
+        RecordSearchQuery(searchTerm);
+
         var seen = new HashSet<Guid>();
 
         // 1. Tracks (Audio items)
@@ -196,10 +198,11 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
 
     private void EnsureTrackItem(Guid trackGuid, TidalTrackItem track, Folder? parentFolder)
     {
+        var artistName = track.Artists?.FirstOrDefault()?.Name ?? track.Artist?.Name ?? "Unknown Artist";
         var existing = _libraryManager.GetItemById(trackGuid);
         if (existing != null)
         {
-            if (existing.ParentId == Guid.Empty && parentFolder != null)
+            if (parentFolder != null && (existing.ParentId != parentFolder.Id || existing.ParentId == Guid.Empty))
             {
                 existing.SetParent(parentFolder);
                 existing.ParentId = parentFolder.Id;
@@ -220,13 +223,20 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         {
             Id = trackGuid,
             Name = track.Title,
-            Artists = track.Artists?.Select(a => a.Name).ToList() ?? [ track.Artist?.Name ?? "Unknown Artist" ],
+            Artists = track.Artists?.Select(a => a.Name).ToList() ?? [ artistName ],
+            AlbumArtists = [ artistName ],
             Album = track.Album?.Title ?? "",
             RunTimeTicks = track.Duration * TimeSpan.TicksPerSecond,
             Path = $"monochrome://track/{track.Id}",
             Container = "mp4",
             IndexNumber = track.TrackNumber
         };
+
+        if (track.Album?.ReleaseDate != null && DateTime.TryParse(track.Album.ReleaseDate, out var dt))
+        {
+            audio.ProductionYear = dt.Year;
+            audio.PremiereDate = dt;
+        }
 
         if (parentFolder != null)
         {
@@ -266,7 +276,7 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         var existing = _libraryManager.GetItemById(albumGuid);
         if (existing != null)
         {
-            if (existing.ParentId == Guid.Empty && parentFolder != null)
+            if (parentFolder != null && (existing.ParentId != parentFolder.Id || existing.ParentId == Guid.Empty))
             {
                 existing.SetParent(parentFolder);
                 existing.ParentId = parentFolder.Id;
@@ -331,7 +341,7 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         var existing = _libraryManager.GetItemById(artistGuid);
         if (existing != null)
         {
-            if (existing.ParentId == Guid.Empty && parentFolder != null)
+            if (parentFolder != null && (existing.ParentId != parentFolder.Id || existing.ParentId == Guid.Empty))
             {
                 existing.SetParent(parentFolder);
                 existing.ParentId = parentFolder.Id;
@@ -391,48 +401,111 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
     {
         try
         {
-            // 1. Try to find a music library from user's accessible library folders
+            // 1. Get all root collection folders in Jellyfin
+            var allCollectionFolders = _libraryManager.RootFolder.Children.OfType<CollectionFolder>().ToList();
+
+            // 2. If a specific user is performing the search, find their accessible collection folders
+            var accessibleFolders = new List<CollectionFolder>();
             if (userId.HasValue && userId.Value != Guid.Empty)
             {
                 var user = _userManager.GetUserById(userId.Value);
                 if (user != null)
                 {
                     var userRoot = _libraryManager.GetUserRootFolder();
-                    var userFolders = userRoot.GetChildren(user, true).OfType<Folder>().ToList();
+                    var userViews = userRoot.GetChildren(user, true).OfType<Folder>().ToList();
 
-                    var musicFolder = userFolders.FirstOrDefault(f =>
-                        f is CollectionFolder cf && cf.CollectionType == CollectionType.music);
-                    if (musicFolder != null)
+                    foreach (var view in userViews)
                     {
-                        return musicFolder;
-                    }
-
-                    if (userFolders.Count > 0)
-                    {
-                        return userFolders[0];
+                        if (view is UserView uv)
+                        {
+                            if (uv.DisplayParent is CollectionFolder dpcf && !accessibleFolders.Contains(dpcf))
+                            {
+                                accessibleFolders.Add(dpcf);
+                            }
+                            else if (uv.DisplayParentId != Guid.Empty && _libraryManager.GetItemById(uv.DisplayParentId) is CollectionFolder cf1 && !accessibleFolders.Contains(cf1))
+                            {
+                                accessibleFolders.Add(cf1);
+                            }
+                            else if (uv.ParentId != Guid.Empty && _libraryManager.GetItemById(uv.ParentId) is CollectionFolder cf2 && !accessibleFolders.Contains(cf2))
+                            {
+                                accessibleFolders.Add(cf2);
+                            }
+                            else
+                            {
+                                var matching = allCollectionFolders.FirstOrDefault(cf => cf.Id == uv.Id || string.Equals(cf.Name, uv.Name, StringComparison.OrdinalIgnoreCase));
+                                if (matching != null && !accessibleFolders.Contains(matching))
+                                {
+                                    accessibleFolders.Add(matching);
+                                }
+                            }
+                        }
+                        else if (view is CollectionFolder cf && !accessibleFolders.Contains(cf))
+                        {
+                            accessibleFolders.Add(cf);
+                        }
                     }
                 }
             }
 
-            // 2. Try global virtual folders
-            var virtualFolders = _libraryManager.GetVirtualFolders();
-            var musicVirtualFolder = virtualFolders.FirstOrDefault(v => v.CollectionType == CollectionTypeOptions.music)
-                ?? virtualFolders.FirstOrDefault();
-            if (musicVirtualFolder != null && Guid.TryParse(musicVirtualFolder.ItemId, out var folderId))
+            // Fall back to all server collection folders if none resolved specifically for the user
+            if (accessibleFolders.Count == 0)
             {
-                if (_libraryManager.GetItemById(folderId) is Folder folder)
+                accessibleFolders = allCollectionFolders;
+            }
+
+            // 3. Look for a Music library among accessible folders
+            var musicFolder = accessibleFolders.FirstOrDefault(f =>
+                f.CollectionType == CollectionType.music
+                || string.Equals(f.CollectionType?.ToString(), "music", StringComparison.OrdinalIgnoreCase)
+                || f.Name.Contains("music", StringComparison.OrdinalIgnoreCase)
+                || f.Name.Contains("musica", StringComparison.OrdinalIgnoreCase));
+
+            if (musicFolder != null)
+            {
+                return musicFolder;
+            }
+
+            // 4. Look for ANY Music library on the entire server
+            var anyMusicFolder = allCollectionFolders.FirstOrDefault(f =>
+                f.CollectionType == CollectionType.music
+                || string.Equals(f.CollectionType?.ToString(), "music", StringComparison.OrdinalIgnoreCase)
+                || f.Name.Contains("music", StringComparison.OrdinalIgnoreCase)
+                || f.Name.Contains("musica", StringComparison.OrdinalIgnoreCase));
+
+            if (anyMusicFolder != null)
+            {
+                return anyMusicFolder;
+            }
+
+            // 5. If no music folder exists, use the first accessible collection folder (e.g. Movies / Series)
+            // Giving the item a real CollectionFolder guarantees TopParentId is non-null and belongs to user's TopParentIds.
+            if (accessibleFolders.Count > 0)
+            {
+                return accessibleFolders[0];
+            }
+
+            if (allCollectionFolders.Count > 0)
+            {
+                return allCollectionFolders[0];
+            }
+
+            // 6. If server has NO collection folders at all, create a virtual music library!
+            try
+            {
+                _logger.LogInformation("No collection folders found in Jellyfin. Auto-creating 'Monochrome Music' virtual library...");
+                _libraryManager.AddVirtualFolder("Monochrome Music", CollectionTypeOptions.music, new LibraryOptions(), false)
+                    .ConfigureAwait(false).GetAwaiter().GetResult();
+
+                var newFolder = _libraryManager.RootFolder.Children.OfType<CollectionFolder>()
+                    .FirstOrDefault(f => f.Name == "Monochrome Music" || f.CollectionType == CollectionType.music);
+                if (newFolder != null)
                 {
-                    return folder;
+                    return newFolder;
                 }
             }
-
-            // 3. Fallback to RootFolder children
-            var rootFolders = _libraryManager.RootFolder.Children.OfType<Folder>().ToList();
-            var rootMusic = rootFolders.FirstOrDefault(f => f is CollectionFolder cf && cf.CollectionType == CollectionType.music)
-                ?? rootFolders.FirstOrDefault();
-            if (rootMusic != null)
+            catch (Exception createEx)
             {
-                return rootMusic;
+                _logger.LogWarning(createEx, "Could not auto-create virtual music folder");
             }
 
             return _libraryManager.RootFolder;
@@ -441,6 +514,36 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         {
             _logger.LogWarning(ex, "Could not locate specific music library folder, using root folder fallback");
             return _libraryManager.RootFolder;
+        }
+    }
+
+    private void RecordSearchQuery(string query)
+    {
+        try
+        {
+            if (Plugin.Instance == null || string.IsNullOrWhiteSpace(query) || query.Length < 2)
+            {
+                return;
+            }
+
+            var config = Plugin.Instance.Configuration;
+            lock (config.RecentSearches)
+            {
+                if (!config.RecentSearches.Contains(query, StringComparer.OrdinalIgnoreCase))
+                {
+                    config.RecentSearches.Insert(0, query);
+                    if (config.RecentSearches.Count > 20)
+                    {
+                        config.RecentSearches.RemoveAt(config.RecentSearches.Count - 1);
+                    }
+
+                    Plugin.Instance.SaveConfiguration();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not record recent search query");
         }
     }
 
