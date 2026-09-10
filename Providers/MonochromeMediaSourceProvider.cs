@@ -8,6 +8,7 @@ using Jellyfin.Plugin.Monochrome.Api;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Persistence;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
@@ -22,13 +23,19 @@ namespace Jellyfin.Plugin.Monochrome.Providers;
 public class MonochromeMediaSourceProvider : IMediaSourceProvider
 {
     private readonly MonochromeApiClient _apiClient;
+    private readonly ILibraryManager _libraryManager;
+    private readonly IMediaStreamRepository _mediaStreamRepository;
     private readonly ILogger<MonochromeMediaSourceProvider> _logger;
 
     public MonochromeMediaSourceProvider(
         MonochromeApiClient apiClient,
+        ILibraryManager libraryManager,
+        IMediaStreamRepository mediaStreamRepository,
         ILogger<MonochromeMediaSourceProvider> logger)
     {
         _apiClient = apiClient;
+        _libraryManager = libraryManager;
+        _mediaStreamRepository = mediaStreamRepository;
         _logger = logger;
     }
 
@@ -58,6 +65,43 @@ public class MonochromeMediaSourceProvider : IMediaSourceProvider
             var isMp4 = localFile.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
             var container = isMp4 ? "mp4" : "flac";
 
+            // Update item in library so that its path points to the real cached file
+            if (item is Audio audioItem && (audioItem.Path != localFile || audioItem.Container != container))
+            {
+                audioItem.Path = localFile;
+                audioItem.Container = container;
+                try
+                {
+                    var parent = audioItem.GetParent() ?? _libraryManager.GetUserRootFolder();
+                    await _libraryManager.UpdateItemAsync(audioItem, parent, ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Could not update track path in library for track {TrackId}", trackId);
+                }
+            }
+
+            // Ensure media stream is saved in SQLite database so GetOptimalAudioStream never throws
+            try
+            {
+                _mediaStreamRepository.SaveMediaStreams(item.Id,
+                [
+                    new MediaStream
+                    {
+                        Type = MediaStreamType.Audio,
+                        Codec = "flac",
+                        Index = 0,
+                        IsDefault = true,
+                        Channels = 2,
+                        SampleRate = 44100
+                    }
+                ], cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not save media stream for track {TrackId}", trackId);
+            }
+
             var mediaSource = new MediaSourceInfo
             {
                 Id = item.Id.ToString("N"),
@@ -66,7 +110,7 @@ public class MonochromeMediaSourceProvider : IMediaSourceProvider
                 Container = container,
                 Name = item.Name,
                 Size = fileInfo.Length,
-                SupportsDirectPlay = false,
+                SupportsDirectPlay = true,
                 SupportsDirectStream = true,
                 SupportsTranscoding = true,
                 IsRemote = false,
@@ -77,7 +121,9 @@ public class MonochromeMediaSourceProvider : IMediaSourceProvider
                         Type = MediaStreamType.Audio,
                         Codec = "flac",
                         Index = 0,
-                        IsDefault = true
+                        IsDefault = true,
+                        Channels = 2,
+                        SampleRate = 44100
                     }
                 ]
             };

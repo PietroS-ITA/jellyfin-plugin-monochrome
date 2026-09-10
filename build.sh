@@ -20,7 +20,7 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="1.3.5.0"
+VERSION="1.3.6.0"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
 mkdir -p "$PACKAGE_DIR"
@@ -52,11 +52,19 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "versions": [
       {
         "version": "${VERSION}",
-        "changelog": "Risolto definitivamente il problema del singolo risultato e del salvataggio impostazioni: 1) Assegnazione di PresentationUniqueKey deterministica a brani, album e artisti, impedendo a ApplyGroupingFilter di Jellyfin di collassare tutti i risultati in un unico elemento. 2) Auto-riparazione SQLite all'avvio su jellyfin.db per correggere gli elementi preesistenti. 3) Corretto il pannello impostazioni (supporto camelCase / PascalCase e evento viewshow per la SPA Jellyfin Web). 4) Canale Monochrome disattivato di default per non intasare la home. 5) Autoplay radio automatico stile Spotify al termine del singolo brano.",
+        "changelog": "Risolto errore riproduzione 'file non supportato' su tutti i client e corretta visualizzazione artista/titolo: 1) Popolazione automatica dei MediaStreamInfos per i brani Audio e supporto sia per direct play che transcodifica su file in cache. 2) Registrazione nativa degli artisti (MusicArtist) e rimozione automatica del campo Album per i singoli, garantendo che nei risultati di ricerca compaia il nome dell'artista sotto il titolo anziche il titolo del singolo. 3) Auto-riparazione SQLite all'avvio su jellyfin.db per tutti i brani memorizzati in precedenza.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_${VERSION}.zip",
         "checksum": "${MD5_CHECKSUM}",
         "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
+        "version": "1.3.5.0",
+        "changelog": "Risolto definitivamente il problema del singolo risultato e del salvataggio impostazioni: 1) Assegnazione di PresentationUniqueKey deterministica a brani, album e artisti, impedendo a ApplyGroupingFilter di Jellyfin di collassare tutti i risultati in un unico elemento. 2) Auto-riparazione SQLite all'avvio su jellyfin.db per correggere gli elementi preesistenti. 3) Corretto il pannello impostazioni (supporto camelCase / PascalCase e evento viewshow per la SPA Jellyfin Web). 4) Canale Monochrome disattivato di default per non intasare la home. 5) Autoplay radio automatico stile Spotify al termine del singolo brano.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.5.0.zip",
+        "checksum": "6b6321949b814a2bbfe35bd75f314558",
+        "timestamp": "2026-09-10T14:52:22Z"
       },
       {
         "version": "1.3.4.0",

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -9,10 +10,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Monochrome.Api;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Persistence;
 using MediaBrowser.Model.Configuration;
+using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Library;
 using Microsoft.Extensions.Logging;
@@ -30,6 +34,8 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
     private readonly ILibraryManager _libraryManager;
     private readonly IUserManager _userManager;
     private readonly IUserViewManager _userViewManager;
+    private readonly IMediaStreamRepository _mediaStreamRepository;
+    private readonly IApplicationPaths _applicationPaths;
     private readonly ILogger<MonochromeSearchProvider> _logger;
 
     public MonochromeSearchProvider(
@@ -37,12 +43,16 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         ILibraryManager libraryManager,
         IUserManager userManager,
         IUserViewManager userViewManager,
+        IMediaStreamRepository mediaStreamRepository,
+        IApplicationPaths applicationPaths,
         ILogger<MonochromeSearchProvider> logger)
     {
         _apiClient = apiClient;
         _libraryManager = libraryManager;
         _userManager = userManager;
         _userViewManager = userViewManager;
+        _mediaStreamRepository = mediaStreamRepository;
+        _applicationPaths = applicationPaths;
         _logger = logger;
     }
 
@@ -202,6 +212,40 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
     public async Task<Audio?> EnsureTrackItemAsync(Guid trackGuid, TidalTrackItem track, Folder? parentFolder, CancellationToken cancellationToken)
     {
         var artistName = track.Artists?.FirstOrDefault()?.Name ?? track.Artist?.Name ?? "Unknown Artist";
+
+        // 1. Ensure artists exist as first-class MusicArtist entities in Jellyfin library
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(artistName))
+            {
+                _libraryManager.GetArtist(artistName);
+            }
+
+            if (track.Artists != null && track.Artists.Count > 0)
+            {
+                foreach (var aRef in track.Artists)
+                {
+                    if (!string.IsNullOrWhiteSpace(aRef.Name))
+                    {
+                        _libraryManager.GetArtist(aRef.Name);
+                        var aGuid = GetDeterministicGuid($"monochrome_artist_{aRef.Id}");
+                        await EnsureArtistItemAsync(aGuid, aRef, parentFolder, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+            else if (track.Artist != null && !string.IsNullOrWhiteSpace(track.Artist.Name))
+            {
+                _libraryManager.GetArtist(track.Artist.Name);
+                var aGuid = GetDeterministicGuid($"monochrome_artist_{track.Artist.Id}");
+                await EnsureArtistItemAsync(aGuid, track.Artist, parentFolder, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not pre-register artist {ArtistName}", artistName);
+        }
+
+        var cacheFile = Path.Combine(_applicationPaths.CachePath, "monochrome", $"{track.Id}.mp4");
         var existing = _libraryManager.GetItemById(trackGuid);
         if (existing != null)
         {
@@ -210,6 +254,24 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
             {
                 existing.PresentationUniqueKey = trackGuid.ToString("N", CultureInfo.InvariantCulture);
                 needsUpdate = true;
+            }
+
+            if (existing is Audio existingAudio)
+            {
+                if (existingAudio.Path != null && existingAudio.Path.StartsWith("monochrome://track/", StringComparison.OrdinalIgnoreCase))
+                {
+                    existingAudio.Path = cacheFile;
+                    existingAudio.Container = "mp4";
+                    needsUpdate = true;
+                }
+
+                if (!string.IsNullOrEmpty(existingAudio.Album) && (existingAudio.Album.Equals(existingAudio.Name, StringComparison.OrdinalIgnoreCase)
+                    || existingAudio.Album.StartsWith(existingAudio.Name + " /", StringComparison.OrdinalIgnoreCase)
+                    || existingAudio.Album.StartsWith(existingAudio.Name + " -", StringComparison.OrdinalIgnoreCase)))
+                {
+                    existingAudio.Album = "";
+                    needsUpdate = true;
+                }
             }
 
             if (parentFolder != null && (existing.ParentId != parentFolder.Id || existing.ParentId == Guid.Empty || existing.ChannelId != Guid.Empty))
@@ -233,7 +295,26 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                 }
             }
 
+            EnsureMediaStreamSaved(trackGuid, cancellationToken);
             return existing as Audio;
+        }
+
+        // For album title: only assign if it belongs to a real multi-track album or inside an album folder
+        string albumTitle = "";
+        if (parentFolder is MusicAlbum albumFolder)
+        {
+            albumTitle = albumFolder.Name;
+        }
+        else if (track.Album != null && !string.IsNullOrWhiteSpace(track.Album.Title))
+        {
+            var isSingle = (track.Album.NumberOfTracks.HasValue && track.Album.NumberOfTracks.Value <= 2)
+                           || track.Album.Title.Equals(track.Title, StringComparison.OrdinalIgnoreCase)
+                           || track.Album.Title.StartsWith(track.Title + " /", StringComparison.OrdinalIgnoreCase)
+                           || track.Album.Title.StartsWith(track.Title + " -", StringComparison.OrdinalIgnoreCase);
+            if (!isSingle)
+            {
+                albumTitle = track.Album.Title;
+            }
         }
 
         var audio = new Audio
@@ -242,9 +323,9 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
             Name = track.Title,
             Artists = track.Artists?.Select(a => a.Name).ToList() ?? [ artistName ],
             AlbumArtists = [ artistName ],
-            Album = track.Album?.Title ?? "",
+            Album = albumTitle,
             RunTimeTicks = track.Duration * TimeSpan.TicksPerSecond,
-            Path = $"monochrome://track/{track.Id}",
+            Path = cacheFile,
             Container = "mp4",
             IndexNumber = track.TrackNumber,
             ExternalId = $"track_{track.Id}",
@@ -285,12 +366,36 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         {
             _libraryManager.CreateItem(audio, parentFolder);
             _logger.LogInformation("Indexed Monochrome track: '{Title}' by '{Artist}' ({TrackId}) under '{ParentName}'", track.Title, artistName, track.Id, parentFolder?.Name ?? "Root");
+            EnsureMediaStreamSaved(trackGuid, cancellationToken);
             return audio;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to register Monochrome track {TrackId} in library", track.Id);
             return null;
+        }
+    }
+
+    private void EnsureMediaStreamSaved(Guid trackGuid, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _mediaStreamRepository.SaveMediaStreams(trackGuid,
+            [
+                new MediaStream
+                {
+                    Type = MediaStreamType.Audio,
+                    Codec = "flac",
+                    Index = 0,
+                    IsDefault = true,
+                    Channels = 2,
+                    SampleRate = 44100
+                }
+            ], cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to save MediaStream for track {TrackGuid}", trackGuid);
         }
     }
 
@@ -370,25 +475,6 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         {
             _libraryManager.CreateItem(musicAlbum, parentFolder);
             _logger.LogInformation("Indexed Monochrome album: '{Title}' ({AlbumId}) under '{ParentName}'", album.Title, album.Id, parentFolder?.Name ?? "Root");
-
-            // Background populate album tracks so opening the album shows all tracks
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    var tracks = await _apiClient.GetAlbumTracksAsync(album.Id, CancellationToken.None).ConfigureAwait(false);
-                    foreach (var t in tracks)
-                    {
-                        var tGuid = GetDeterministicGuid($"monochrome_track_{t.Id}");
-                        await EnsureTrackItemAsync(tGuid, t, musicAlbum, CancellationToken.None).ConfigureAwait(false);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Could not pre-fetch tracks for album {AlbumId}", album.Id);
-                }
-            });
-
             return musicAlbum;
         }
         catch (Exception ex)
@@ -400,6 +486,18 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
 
     public async Task<MusicArtist?> EnsureArtistItemAsync(Guid artistGuid, TidalArtistRef artist, Folder? parentFolder, CancellationToken cancellationToken)
     {
+        if (!string.IsNullOrWhiteSpace(artist.Name))
+        {
+            try
+            {
+                _libraryManager.GetArtist(artist.Name);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not pre-register artist {ArtistName}", artist.Name);
+            }
+        }
+
         var existing = _libraryManager.GetItemById(artistGuid);
         if (existing != null)
         {
@@ -470,32 +568,6 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         {
             _libraryManager.CreateItem(musicArtist, parentFolder);
             _logger.LogInformation("Indexed Monochrome artist: '{Name}' ({ArtistId}) under '{ParentName}'", artist.Name, artist.Id, parentFolder?.Name ?? "Root");
-
-            // Background pre-fetch artist top tracks and albums so navigating to artist shows tracks & albums
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    var topTracks = await _apiClient.GetArtistTopTracksAsync(artist.Id, CancellationToken.None).ConfigureAwait(false);
-                    foreach (var t in topTracks)
-                    {
-                        var tGuid = GetDeterministicGuid($"monochrome_track_{t.Id}");
-                        await EnsureTrackItemAsync(tGuid, t, parentFolder, CancellationToken.None).ConfigureAwait(false);
-                    }
-
-                    var albums = await _apiClient.GetArtistAlbumsAsync(artist.Id, CancellationToken.None).ConfigureAwait(false);
-                    foreach (var alb in albums)
-                    {
-                        var albGuid = GetDeterministicGuid($"monochrome_album_{alb.Id}");
-                        await EnsureAlbumItemAsync(albGuid, alb, parentFolder, CancellationToken.None).ConfigureAwait(false);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Could not pre-fetch items for artist {ArtistId}", artist.Id);
-                }
-            });
-
             return musicArtist;
         }
         catch (Exception ex)

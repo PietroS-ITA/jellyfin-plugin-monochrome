@@ -2,11 +2,13 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Monochrome.Api;
 using Jellyfin.Plugin.Monochrome.Search;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
@@ -26,6 +28,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
     private readonly ISessionManager _sessionManager;
     private readonly MonochromeApiClient _apiClient;
     private readonly MonochromeSearchProvider _searchProvider;
+    private readonly IApplicationPaths _applicationPaths;
     private readonly ILogger<MonochromePlaybackManager> _logger;
     private readonly ConcurrentDictionary<string, string> _lastQueuedRadioTrack = new();
 
@@ -33,11 +36,13 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
         ISessionManager sessionManager,
         MonochromeApiClient apiClient,
         MonochromeSearchProvider searchProvider,
+        IApplicationPaths applicationPaths,
         ILogger<MonochromePlaybackManager> logger)
     {
         _sessionManager = sessionManager;
         _apiClient = apiClient;
         _searchProvider = searchProvider;
+        _applicationPaths = applicationPaths;
         _logger = logger;
     }
 
@@ -48,24 +53,40 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
         _logger.LogInformation("Monochrome Autoplay Radio manager initialized.");
         try
         {
-            await RepairPresentationUniqueKeysAsync().ConfigureAwait(false);
+            await RepairDatabaseAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "RepairPresentationUniqueKeysAsync top-level exception");
+            _logger.LogError(ex, "RepairDatabaseAsync top-level exception");
         }
     }
 
-    private async Task RepairPresentationUniqueKeysAsync()
+    private async Task RepairDatabaseAsync()
     {
         await Task.Yield();
         try
         {
-            var candidatePaths = new[]
+            var candidatePaths = new List<string>();
+            try
             {
-                "/config/data/jellyfin.db",
-                "/config/jellyfin.db"
-            };
+                if (!string.IsNullOrEmpty(_applicationPaths.DataPath))
+                {
+                    candidatePaths.Add(Path.Combine(_applicationPaths.DataPath, "jellyfin.db"));
+                }
+
+                if (!string.IsNullOrEmpty(_applicationPaths.ConfigurationDirectoryPath))
+                {
+                    candidatePaths.Add(Path.Combine(_applicationPaths.ConfigurationDirectoryPath, "data", "jellyfin.db"));
+                    candidatePaths.Add(Path.Combine(_applicationPaths.ConfigurationDirectoryPath, "jellyfin.db"));
+                }
+            }
+            catch
+            {
+                // Fallback to standard defaults
+            }
+
+            candidatePaths.Add("/config/data/jellyfin.db");
+            candidatePaths.Add("/config/jellyfin.db");
 
             var dbFile = candidatePaths.FirstOrDefault(File.Exists);
             if (string.IsNullOrEmpty(dbFile))
@@ -86,10 +107,66 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
 
             using var conn = (System.Data.Common.DbConnection)Activator.CreateInstance(connType, $"Data Source={dbFile};Mode=ReadWrite")!;
             await conn.OpenAsync().ConfigureAwait(false);
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "UPDATE BaseItems SET PresentationUniqueKey = LOWER(REPLACE(Id, '-', '')) WHERE PresentationUniqueKey IS NULL;";
-            var affected = await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
-            _logger.LogInformation("Monochrome DB Repair: Successfully repaired {Count} items with NULL PresentationUniqueKey in {DbFile}.", affected, dbFile);
+
+            // 1. Repair NULL PresentationUniqueKey
+            using (var cmd1 = conn.CreateCommand())
+            {
+                cmd1.CommandText = "UPDATE BaseItems SET PresentationUniqueKey = LOWER(REPLACE(Id, '-', '')) WHERE PresentationUniqueKey IS NULL;";
+                var affected = await cmd1.ExecuteNonQueryAsync().ConfigureAwait(false);
+                if (affected > 0)
+                {
+                    _logger.LogInformation("Monochrome DB Repair: Repaired {Count} items with NULL PresentationUniqueKey.", affected);
+                }
+            }
+
+            // 2. Repair legacy monochrome://track/ paths to local cache path
+            var cacheDir = Path.Combine(_applicationPaths.CachePath, "monochrome");
+            using (var cmd2 = conn.CreateCommand())
+            {
+                cmd2.CommandText = "UPDATE BaseItems SET Path = @cacheDir || '/' || SUBSTR(Path, 20) || '.mp4' WHERE Path LIKE 'monochrome://track/%';";
+                var p1 = cmd2.CreateParameter();
+                p1.ParameterName = "@cacheDir";
+                p1.Value = cacheDir;
+                cmd2.Parameters.Add(p1);
+                var affected = await cmd2.ExecuteNonQueryAsync().ConfigureAwait(false);
+                if (affected > 0)
+                {
+                    _logger.LogInformation("Monochrome DB Repair: Repaired {Count} items with legacy monochrome:// paths.", affected);
+                }
+            }
+
+            // 3. Ensure MediaStreamInfos exists for all Audio BaseItems
+            using (var cmd3 = conn.CreateCommand())
+            {
+                cmd3.CommandText = @"
+                    INSERT INTO MediaStreamInfos (ItemId, StreamIndex, StreamType, Codec, Channels, SampleRate, IsDefault, IsExternal, IsForced, IsOriginal)
+                    SELECT b.Id, 0, 0, 'flac', 2, 44100, 1, 0, 0, 0
+                    FROM BaseItems b
+                    LEFT JOIN MediaStreamInfos m ON b.Id = m.ItemId AND m.StreamIndex = 0
+                    WHERE b.Type = 'MediaBrowser.Controller.Entities.Audio.Audio'
+                      AND m.ItemId IS NULL;";
+                var affected = await cmd3.ExecuteNonQueryAsync().ConfigureAwait(false);
+                if (affected > 0)
+                {
+                    _logger.LogInformation("Monochrome DB Repair: Inserted missing default media streams for {Count} audio items.", affected);
+                }
+            }
+
+            // 4. Clean up single-track Album titles that match the track title (so artist name displays on subtitle)
+            using (var cmd4 = conn.CreateCommand())
+            {
+                cmd4.CommandText = @"
+                    UPDATE BaseItems
+                    SET Album = ''
+                    WHERE Type = 'MediaBrowser.Controller.Entities.Audio.Audio'
+                      AND (Path LIKE '%monochrome%' OR ExternalId LIKE 'track_%')
+                      AND (Album = Name OR Album LIKE Name || ' / %' OR Album LIKE Name || ' - %');";
+                var affected = await cmd4.ExecuteNonQueryAsync().ConfigureAwait(false);
+                if (affected > 0)
+                {
+                    _logger.LogInformation("Monochrome DB Repair: Cleared redundant single-song Album name for {Count} tracks.", affected);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -129,9 +206,22 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
             }
         }
 
-        if (string.IsNullOrEmpty(trackIdStr) && audio.Path != null && audio.Path.StartsWith("monochrome://track/", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(trackIdStr) && audio.Path != null)
         {
-            trackIdStr = audio.Path.Substring("monochrome://track/".Length);
+            if (audio.Path.StartsWith("monochrome://track/", StringComparison.OrdinalIgnoreCase))
+            {
+                trackIdStr = audio.Path.Substring("monochrome://track/".Length);
+            }
+            else if (audio.Path.Contains("/monochrome/"))
+            {
+                var fileName = Path.GetFileNameWithoutExtension(audio.Path);
+                trackIdStr = fileName;
+            }
+        }
+
+        if (string.IsNullOrEmpty(trackIdStr) && !string.IsNullOrEmpty(audio.ExternalId) && audio.ExternalId.StartsWith("track_", StringComparison.OrdinalIgnoreCase))
+        {
+            trackIdStr = audio.ExternalId.Substring("track_".Length);
         }
 
         if (string.IsNullOrEmpty(trackIdStr) || !long.TryParse(trackIdStr, out var trackId))
