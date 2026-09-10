@@ -8,6 +8,7 @@ using Jellyfin.Plugin.Monochrome.Api;
 using MediaBrowser.Controller.Channels;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Channels;
+using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
@@ -163,7 +164,7 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
                 Overview = "Explore trending top songs across the music catalogue.",
                 Type = ChannelItemType.Folder,
                 FolderType = ChannelFolderType.Container,
-                ImageUrl = "https://resources.tidal.com/images/153a5c0e/a879/4cba/9b7e/343c16260a92/640x640.jpg"
+                ImageUrl = "https://resources.tidal.com/images/467045b9/f75b/48ae/ab3d/4ce9d1d20004/640x640.jpg"
             },
             new ChannelItemInfo
             {
@@ -172,7 +173,7 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
                 Overview = "Browse your recent free searches and custom queries (synced with the Monochrome Search page).",
                 Type = ChannelItemType.Folder,
                 FolderType = ChannelFolderType.Container,
-                ImageUrl = "https://resources.tidal.com/images/7376c221/ca36/4134/9605/65c829e0839f/640x640.jpg"
+                ImageUrl = "https://resources.tidal.com/images/484ed25b/02d1/4f09/a297/7ff020ebc1ce/640x640.jpg"
             },
             new ChannelItemInfo
             {
@@ -181,7 +182,7 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
                 Overview = "Explore Pop, Rock, Hip-Hop, Electronic, Jazz, Classical, and more.",
                 Type = ChannelItemType.Folder,
                 FolderType = ChannelFolderType.Container,
-                ImageUrl = "https://resources.tidal.com/images/a8323a6f/b9ad/448d/9b7e/241d7a8d5df1/640x640.jpg"
+                ImageUrl = "https://resources.tidal.com/images/dc98503e/01a0/452f/9176/581511669903/640x640.jpg"
             }
         };
 
@@ -194,11 +195,16 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
 
     private ChannelItemResult GetRecentSearchesFolder()
     {
-        var queries = Plugin.Instance?.Configuration.RecentSearches ?? new List<string>();
+        var queries = Plugin.Instance?.Configuration.RecentSearches?.ToList() ?? new List<string>();
+        if (queries.Count == 0)
+        {
+            queries = new List<string> { "Top Hits", "Pop", "Rock", "Hip-Hop", "Italian Hits", "Electronic", "Jazz", "Sanremo" };
+        }
+
         var items = queries.Select(q => new ChannelItemInfo
         {
             Id = $"search_q_{Uri.EscapeDataString(q)}",
-            Name = $"Search: {q}",
+            Name = $"🔍 {q}",
             Overview = $"Browse results for '{q}' in Monochrome / TIDAL HiFi.",
             Type = ChannelItemType.Folder,
             FolderType = ChannelFolderType.Container
@@ -487,6 +493,21 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
     /// <inheritdoc />
     public Task<DynamicImageResponse> GetChannelImage(ImageType type, CancellationToken cancellationToken)
     {
+        if (type == ImageType.Primary || type == ImageType.Thumb)
+        {
+            var assembly = typeof(MonochromeChannel).Assembly;
+            var stream = assembly.GetManifestResourceStream("Jellyfin.Plugin.Monochrome.Images.icon.png");
+            if (stream != null)
+            {
+                return Task.FromResult(new DynamicImageResponse
+                {
+                    HasImage = true,
+                    Stream = stream,
+                    Format = ImageFormat.Png
+                });
+            }
+        }
+
         return Task.FromResult(new DynamicImageResponse { HasImage = false });
     }
 
