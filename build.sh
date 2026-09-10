@@ -20,7 +20,7 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="${1:-1.3.9.0}"
+VERSION="${1:-1.3.9.1}"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
 mkdir -p "$PACKAGE_DIR"
@@ -51,12 +51,20 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.3.9.1",
+        "changelog": "Risolto definitivamente posizionamento pulsante Testi nella barra (inserito nei controlli centrali, controlli utente a destra, pagina schermo intero e dock pill galleggiante); ricerca testi ultra-resiliente multi-sorgente con fallback su titolo e artista; fix totale del tasto Stop (rimossa propagazione client-queue e cancellazione istantanea coda server su stop).",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.1.zip",
+        "checksum": "${MD5_CHECKSUM}",
+        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
         "version": "1.3.9.0",
         "changelog": "Novita e correzioni: 1) Testi Karaoke in stile Apple Music sincronizzati nel tempo con pulsante 'Testi' ben visibile nella barra di riproduzione, sfocatura dinamica della copertina, evidenziazione riga attiva e seek interattivo. 2) Accuratezza della ricerca migliorata drasticamente per query composte da Titolo + Artista (es. 'Magnetic The bausa'): punteggio di rilevanza massimo (100) per match esatto combinato. 3) Risolto problema del pulsante Stop (non avvia piu un'altra canzone quando fermato manualmente) e migliorata l'affidabilita del pulsante Next.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.0.zip",
-        "checksum": "${MD5_CHECKSUM}",
-        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        "checksum": "c3e3eae966071e7aa2f707b493eef479",
+        "timestamp": "2026-09-10T21:59:49Z"
       },
       {
         "version": "1.3.8.0",

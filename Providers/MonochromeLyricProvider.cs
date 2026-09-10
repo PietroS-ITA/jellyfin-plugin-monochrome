@@ -41,7 +41,22 @@ public class MonochromeLyricProvider : ILyricProvider
         try
         {
             var artist = request.ArtistNames?.FirstOrDefault() ?? request.AlbumArtistsNames?.FirstOrDefault();
-            var lyrics = await _apiClient.GetTrackLyricsAsync(0, request.SongName, artist, cancellationToken).ConfigureAwait(false);
+            long trackId = 0;
+            if (request.ProviderIds != null)
+            {
+                if (request.ProviderIds.TryGetValue("TidalTrack", out var tStr) || request.ProviderIds.TryGetValue("MonochromeTrack", out tStr))
+                {
+                    long.TryParse(tStr, out trackId);
+                }
+            }
+
+            if (trackId == 0 && !string.IsNullOrEmpty(request.MediaPath))
+            {
+                var fn = Path.GetFileNameWithoutExtension(request.MediaPath);
+                long.TryParse(fn, out trackId);
+            }
+
+            var lyrics = await _apiClient.GetTrackLyricsAsync(trackId, request.SongName, artist, cancellationToken).ConfigureAwait(false);
             if (lyrics == null)
             {
                 return Array.Empty<RemoteLyricInfo>();

@@ -379,15 +379,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                         }
                     });
 
-                    // Send PlayCommand.PlayLast to client player so client queue is populated
-                    var playRequest = new PlayRequest
-                    {
-                        ItemIds = queuedGuids.ToArray(),
-                        PlayCommand = PlayCommand.PlayLast
-                    };
-
-                    await _sessionManager.SendPlayCommand(string.Empty, sessionId, playRequest, CancellationToken.None).ConfigureAwait(false);
-                    _logger.LogInformation("Autoplay Radio: Enqueued {Count} similar tracks for '{Title}'", queuedGuids.Count, audio.Name);
+                    _logger.LogInformation("Autoplay Radio: Prepared {Count} similar tracks for '{Title}' in radio queue", queuedGuids.Count, audio.Name);
                 }
             }
             catch (Exception ex)
@@ -424,18 +416,12 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
             return;
         }
 
-        // Check if playback was stopped manually by the user
+        // CRITICAL: If playback was stopped before completion, the user pressed STOP (or paused/navigated).
+        // Under no circumstances should autoplay radio trigger another song when Stopped before completion!
         if (!e.PlayedToCompletion)
         {
-            var posTicks = e.PlaybackPositionTicks ?? 0;
-            var runTicks = audio.RunTimeTicks ?? 0;
-            // If stopped more than 3 seconds before end of song, the user pressed STOP!
-            if (runTicks > 0 && posTicks < (runTicks - 3 * TimeSpan.TicksPerSecond))
-            {
-                _logger.LogInformation("Monochrome Autoplay: Track '{Title}' was stopped manually at {Pos}s / {Total}s. Not auto-advancing.",
-                    audio.Name, posTicks / 10_000_000, runTicks / 10_000_000);
-                return;
-            }
+            _logger.LogInformation("Monochrome Autoplay: Track '{Title}' was stopped before completion. Not advancing autoplay radio.", audio.Name);
+            return;
         }
 
         _ = Task.Run(async () =>
@@ -548,6 +534,32 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
         }
 
         return nextTrackGuid;
+    }
+
+    /// <summary>
+    /// Clears the radio autoplay queue for a session and/or user.
+    /// </summary>
+    public void ClearRadioQueue(string? sessionId, Guid? userId)
+    {
+        if (!string.IsNullOrEmpty(sessionId) && _sessionRadioQueues.TryGetValue(sessionId, out var sQueue))
+        {
+            lock (sQueue)
+            {
+                sQueue.Clear();
+            }
+            _sessionRadioQueues.TryRemove(sessionId, out _);
+        }
+
+        if (userId.HasValue && userId.Value != Guid.Empty && _userRadioQueues.TryGetValue(userId.Value, out var uQueue))
+        {
+            lock (uQueue)
+            {
+                uQueue.Clear();
+            }
+            _userRadioQueues.TryRemove(userId.Value, out _);
+        }
+
+        _logger.LogInformation("Autoplay Radio: Cleared queue for session '{SessionId}', user '{UserId}'", sessionId, userId);
     }
 
     private void InjectWebClientScript()

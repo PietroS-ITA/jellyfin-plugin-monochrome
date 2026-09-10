@@ -520,6 +520,63 @@ public class MonochromeController : ControllerBase
     }
 
     /// <summary>
+    /// Searches or retrieves lyrics by title and artist, guid, or trackId.
+    /// </summary>
+    [HttpGet("Lyrics/Search")]
+    public async Task<IActionResult> SearchLyrics(
+        [FromQuery] string? title = null,
+        [FromQuery] string? artist = null,
+        [FromQuery] long trackId = 0,
+        [FromQuery] Guid? guid = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (guid.HasValue && guid.Value != Guid.Empty)
+        {
+            var item = _libraryManager.GetItemById(guid.Value);
+            if (item is Audio audio)
+            {
+                if (trackId == 0 && audio.ProviderIds != null)
+                {
+                    if (audio.ProviderIds.TryGetValue("TidalTrack", out var tStr) || audio.ProviderIds.TryGetValue("MonochromeTrack", out tStr))
+                    {
+                        long.TryParse(tStr, out trackId);
+                    }
+                }
+
+                if (trackId == 0 && audio.ExternalId != null && audio.ExternalId.StartsWith("track_"))
+                {
+                    long.TryParse(audio.ExternalId.Substring(6), out trackId);
+                }
+
+                title ??= audio.Name;
+                artist ??= audio.Artists?.FirstOrDefault() ?? audio.AlbumArtists?.FirstOrDefault();
+            }
+        }
+
+        if (trackId > 0 || !string.IsNullOrWhiteSpace(title))
+        {
+            var lyrics = await _apiClient.GetTrackLyricsAsync(trackId, title, artist, cancellationToken).ConfigureAwait(false);
+            if (lyrics != null)
+            {
+                return Ok(lyrics);
+            }
+        }
+
+        return NotFound(new { error = "No lyrics found" });
+    }
+
+    /// <summary>
+    /// Stops playback and clears the radio autoplay queue for a session.
+    /// </summary>
+    [HttpGet("Playback/Stop")]
+    [HttpPost("Playback/Stop")]
+    public IActionResult TriggerStopRadio([FromQuery] string? sessionId = null, [FromQuery] Guid? userId = null)
+    {
+        _playbackManager?.ClearRadioQueue(sessionId, userId);
+        return Ok(new { success = true, stopped = true });
+    }
+
+    /// <summary>
     /// Advances playback to the next song in the radio queue.
     /// </summary>
     [HttpGet("Playback/Next")]

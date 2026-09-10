@@ -8,6 +8,14 @@
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.3.9.1",
+        "changelog": "Risolto definitivamente posizionamento pulsante Testi nella barra (inserito nei controlli centrali, controlli utente a destra, pagina schermo intero e dock pill galleggiante); ricerca testi ultra-resiliente multi-sorgente con fallback su titolo e artista; fix totale del tasto Stop (rimossa propagazione client-queue e cancellazione istantanea coda server su stop).",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/Jellyfin.Plugin.Monochrome_1.3.9.1.zip",
+        "checksum": "a1077ca4d5527d28328a1afa01e75fa6",
+        "timestamp": "2026-09-10T22:20:24Z"
+      },
+      {
         "version": "1.3.9.0",
         "changelog": "Novita e correzioni: 1) Testi Karaoke in stile Apple Music sincronizzati nel tempo con pulsante 'Testi' ben visibile nella barra di riproduzione, sfocatura dinamica della copertina, evidenziazione riga attiva e seek interattivo. 2) Accuratezza della ricerca migliorata drasticamente per query composte da Titolo + Artista (es. 'Magnetic The bausa'): punteggio di rilevanza massimo (100) per match esatto combinato. 3) Risolto problema del pulsante Stop (non avvia piu un'altra canzone quando fermato manualmente) e migliorata l'affidabilita del pulsante Next.",
         "targetAbi": "12.0.0.0",

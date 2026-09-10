@@ -895,10 +895,31 @@ public class MonochromeApiClient
     public async Task<TrackLyricsResult?> GetTrackLyricsAsync(long trackId, string? title = null, string? artist = null, CancellationToken cancellationToken = default)
     {
         var cacheDir = Path.Combine(_applicationPaths.CachePath, "monochrome");
-        var lrcFile = Path.Combine(cacheDir, $"{trackId}.lrc");
 
-        // 1. Check if cached .lrc file already exists
-        if (File.Exists(lrcFile))
+        // 1. If trackId is missing, resolve it via TIDAL Search first
+        if (trackId <= 0 && !string.IsNullOrWhiteSpace(title))
+        {
+            try
+            {
+                var searchQuery = !string.IsNullOrWhiteSpace(artist) ? $"{title} {artist}" : title;
+                var searchRes = await SearchAsync(searchQuery, cancellationToken).ConfigureAwait(false);
+                var first = searchRes?.Tracks?.Items?.FirstOrDefault();
+                if (first != null && first.Id > 0)
+                {
+                    trackId = first.Id;
+                    title ??= first.Title;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "TIDAL search resolution failed for lyrics '{Title}'", title);
+            }
+        }
+
+        var lrcFile = trackId > 0 ? Path.Combine(cacheDir, $"{trackId}.lrc") : null;
+
+        // 2. Check if cached .lrc file already exists
+        if (lrcFile != null && File.Exists(lrcFile))
         {
             try
             {
@@ -918,57 +939,63 @@ public class MonochromeApiClient
             }
         }
 
-        // 2. Query TIDAL / Monochrome HiFi API for lyrics
-        try
+        // 3. Query TIDAL / Monochrome HiFi API for lyrics
+        if (trackId > 0)
         {
-            var hifiUrl = $"https://hifi-api-workers.orbmusic.workers.dev/lyrics?id={trackId}";
-            using var req = new HttpRequestMessage(HttpMethod.Get, hifiUrl);
-            req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
-            using var res = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
-            if (res.IsSuccessStatusCode)
+            try
             {
-                var json = await res.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("lyrics", out var lyricsObj))
+                var hifiUrl = $"https://hifi-api-workers.orbmusic.workers.dev/lyrics?id={trackId}";
+                using var req = new HttpRequestMessage(HttpMethod.Get, hifiUrl);
+                req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+                using var res = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
+                if (res.IsSuccessStatusCode)
                 {
-                    string? subtitles = lyricsObj.TryGetProperty("subtitles", out var subProp) ? subProp.GetString() : null;
-                    string? plain = lyricsObj.TryGetProperty("lyrics", out var lyrProp) ? lyrProp.GetString() : null;
-
-                    if (!string.IsNullOrWhiteSpace(subtitles))
+                    var json = await res.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.TryGetProperty("lyrics", out var lyricsObj))
                     {
-                        var result = ParseLrc(subtitles, trackId, title, artist);
-                        result.PlainLyrics = plain ?? result.PlainLyrics;
+                        string? subtitles = lyricsObj.TryGetProperty("subtitles", out var subProp) ? subProp.GetString() : null;
+                        string? plain = lyricsObj.TryGetProperty("lyrics", out var lyrProp) ? lyrProp.GetString() : null;
 
-                        // Save cache file
-                        try
+                        if (!string.IsNullOrWhiteSpace(subtitles))
                         {
-                            Directory.CreateDirectory(cacheDir);
-                            await File.WriteAllTextAsync(lrcFile, subtitles, cancellationToken).ConfigureAwait(false);
+                            var result = ParseLrc(subtitles, trackId, title, artist);
+                            result.PlainLyrics = plain ?? result.PlainLyrics;
+
+                            // Save cache file
+                            if (lrcFile != null)
+                            {
+                                try
+                                {
+                                    Directory.CreateDirectory(cacheDir);
+                                    await File.WriteAllTextAsync(lrcFile, subtitles, cancellationToken).ConfigureAwait(false);
+                                }
+                                catch { }
+                            }
+
+                            return result;
                         }
-                        catch { }
-
-                        return result;
-                    }
-                    else if (!string.IsNullOrWhiteSpace(plain))
-                    {
-                        return new TrackLyricsResult
+                        else if (!string.IsNullOrWhiteSpace(plain))
                         {
-                            TrackId = trackId,
-                            Title = title ?? string.Empty,
-                            Artist = artist ?? string.Empty,
-                            HasSynced = false,
-                            PlainLyrics = plain
-                        };
+                            return new TrackLyricsResult
+                            {
+                                TrackId = trackId,
+                                Title = title ?? string.Empty,
+                                Artist = artist ?? string.Empty,
+                                HasSynced = false,
+                                PlainLyrics = plain
+                            };
+                        }
                     }
                 }
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "HiFi lyrics resolution failed for track {TrackId}", trackId);
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "HiFi lyrics resolution failed for track {TrackId}", trackId);
+            }
         }
 
-        // 3. Fallback: Query LRCLIB.net for synchronized lyrics
+        // 4. Fallback: Query LRCLIB.net for synchronized lyrics (/api/get)
         if (!string.IsNullOrWhiteSpace(title))
         {
             try
@@ -990,12 +1017,15 @@ public class MonochromeApiClient
                         var result = ParseLrc(synced, trackId, title, artist);
                         result.PlainLyrics = plain ?? result.PlainLyrics;
 
-                        try
+                        if (lrcFile != null)
                         {
-                            Directory.CreateDirectory(cacheDir);
-                            await File.WriteAllTextAsync(lrcFile, synced, cancellationToken).ConfigureAwait(false);
+                            try
+                            {
+                                Directory.CreateDirectory(cacheDir);
+                                await File.WriteAllTextAsync(lrcFile, synced, cancellationToken).ConfigureAwait(false);
+                            }
+                            catch { }
                         }
-                        catch { }
 
                         return result;
                     }
@@ -1014,7 +1044,63 @@ public class MonochromeApiClient
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "LRCLIB lyrics resolution failed for track {TrackId}", trackId);
+                _logger.LogDebug(ex, "LRCLIB GET lyrics resolution failed for '{Title}'", title);
+            }
+
+            // 5. Fallback: Query LRCLIB.net search API (/api/search?q=)
+            try
+            {
+                var searchQuery = !string.IsNullOrWhiteSpace(artist) ? $"{title} {artist}" : title;
+                var searchUrl = $"https://lrclib.net/api/search?q={Uri.EscapeDataString(searchQuery)}";
+                using var req = new HttpRequestMessage(HttpMethod.Get, searchUrl);
+                req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+                using var res = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
+                if (res.IsSuccessStatusCode)
+                {
+                    var json = await res.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in doc.RootElement.EnumerateArray())
+                        {
+                            string? synced = item.TryGetProperty("syncedLyrics", out var sProp) ? sProp.GetString() : null;
+                            string? plain = item.TryGetProperty("plainLyrics", out var pProp) ? pProp.GetString() : null;
+
+                            if (!string.IsNullOrWhiteSpace(synced))
+                            {
+                                var result = ParseLrc(synced, trackId, title, artist);
+                                result.PlainLyrics = plain ?? result.PlainLyrics;
+
+                                if (lrcFile != null)
+                                {
+                                    try
+                                    {
+                                        Directory.CreateDirectory(cacheDir);
+                                        await File.WriteAllTextAsync(lrcFile, synced, cancellationToken).ConfigureAwait(false);
+                                    }
+                                    catch { }
+                                }
+
+                                return result;
+                            }
+                            else if (!string.IsNullOrWhiteSpace(plain))
+                            {
+                                return new TrackLyricsResult
+                                {
+                                    TrackId = trackId,
+                                    Title = title ?? string.Empty,
+                                    Artist = artist ?? string.Empty,
+                                    HasSynced = false,
+                                    PlainLyrics = plain
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "LRCLIB Search lyrics failed for query '{Title}'", title);
             }
         }
 

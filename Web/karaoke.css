@@ -2,36 +2,81 @@
    Monochrome Apple Music Style Karaoke Lyrics CSS
    ========================================================================== */
 
-#btnMonochromeLyrics {
+/* Buttons in Player Bar & Page */
+.btnMonochromeLyricsCenter,
+.btnMonochromeLyricsRight,
+.btnMonochromeLyricsPage {
     display: inline-flex !important;
     align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    margin: 0 8px;
-    border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.14);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    color: #ffffff;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    justify-content: center;
     vertical-align: middle;
-    z-index: 100;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    color: #ffffff !important;
+    margin: 0 4px;
 }
 
-#btnMonochromeLyrics:hover {
-    background: rgba(255, 255, 255, 0.28);
+.btnMonochromeLyricsCenter:hover,
+.btnMonochromeLyricsRight:hover,
+.btnMonochromeLyricsPage:hover {
+    transform: scale(1.12);
+    color: #00a4dc !important;
+}
+
+.openLyricsButton {
+    display: inline-flex !important;
+}
+
+/* Floating Pill Button docked above the bottom bar */
+.monochrome-lyrics-floating-pill {
+    position: fixed;
+    bottom: 5.2em;
+    right: 24px;
+    z-index: 1300;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 18px;
+    border-radius: 9999px;
+    background: rgba(26, 26, 30, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    cursor: pointer;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+}
+
+.monochrome-lyrics-floating-pill.visible {
+    display: inline-flex !important;
+    animation: monoPillFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes monoPillFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.monochrome-lyrics-floating-pill:hover {
+    background: rgba(45, 45, 52, 0.95);
     border-color: rgba(255, 255, 255, 0.45);
-    transform: scale(1.05);
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    transform: scale(1.06);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
 }
 
-#btnMonochromeLyrics .mic-icon {
-    font-size: 16px;
+.monochrome-lyrics-floating-pill .pill-icon {
+    font-size: 17px;
     line-height: 1;
 }
 
