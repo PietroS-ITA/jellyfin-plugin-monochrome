@@ -131,7 +131,7 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         // 1. Tracks (Audio items)
         if (catalog.Tracks?.Items != null && AllowsType(query, BaseItemKind.Audio))
         {
-            foreach (var track in catalog.Tracks.Items.Take(20))
+            foreach (var track in catalog.Tracks.Items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -142,14 +142,15 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                 }
 
                 await EnsureTrackItemAsync(trackGuid, track, parentFolder, cancellationToken).ConfigureAwait(false);
-                yield return new SearchResult(trackGuid, 0.98f);
+                var score = CalculateScore(track.Title, searchTerm, 100f, 96f, 92f, 80f);
+                yield return new SearchResult(trackGuid, score);
             }
         }
 
         // 2. Albums (MusicAlbum items)
         if (catalog.Albums?.Items != null && AllowsType(query, BaseItemKind.MusicAlbum))
         {
-            foreach (var album in catalog.Albums.Items.Take(10))
+            foreach (var album in catalog.Albums.Items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -160,14 +161,15 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                 }
 
                 await EnsureAlbumItemAsync(albumGuid, album, parentFolder, cancellationToken).ConfigureAwait(false);
-                yield return new SearchResult(albumGuid, 0.95f);
+                var score = CalculateScore(album.Title, searchTerm, 98f, 94f, 88f, 70f);
+                yield return new SearchResult(albumGuid, score);
             }
         }
 
         // 3. Artists (MusicArtist items)
         if (catalog.Artists?.Items != null && AllowsType(query, BaseItemKind.MusicArtist))
         {
-            foreach (var artist in catalog.Artists.Items.Take(5))
+            foreach (var artist in catalog.Artists.Items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -178,7 +180,8 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                 }
 
                 await EnsureArtistItemAsync(artistGuid, artist, parentFolder, cancellationToken).ConfigureAwait(false);
-                yield return new SearchResult(artistGuid, 0.90f);
+                var score = CalculateScore(artist.Name, searchTerm, 97f, 93f, 85f, 65f);
+                yield return new SearchResult(artistGuid, score);
             }
         }
     }
@@ -446,6 +449,32 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         {
             _libraryManager.CreateItem(musicArtist, parentFolder);
             _logger.LogInformation("Indexed Monochrome artist: '{Name}' ({ArtistId}) under '{ParentName}'", artist.Name, artist.Id, parentFolder?.Name ?? "Root");
+
+            // Background pre-fetch artist top tracks and albums so navigating to artist shows tracks & albums
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var topTracks = await _apiClient.GetArtistTopTracksAsync(artist.Id, CancellationToken.None).ConfigureAwait(false);
+                    foreach (var t in topTracks)
+                    {
+                        var tGuid = GetDeterministicGuid($"monochrome_track_{t.Id}");
+                        await EnsureTrackItemAsync(tGuid, t, parentFolder, CancellationToken.None).ConfigureAwait(false);
+                    }
+
+                    var albums = await _apiClient.GetArtistAlbumsAsync(artist.Id, CancellationToken.None).ConfigureAwait(false);
+                    foreach (var alb in albums)
+                    {
+                        var albGuid = GetDeterministicGuid($"monochrome_album_{alb.Id}");
+                        await EnsureAlbumItemAsync(albGuid, alb, parentFolder, CancellationToken.None).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Could not pre-fetch items for artist {ArtistId}", artist.Id);
+                }
+            });
+
             return musicArtist;
         }
         catch (Exception ex)
@@ -459,63 +488,245 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
     {
         try
         {
-            // 1. Look for a dedicated Music collection folder on the server
-            var allCollectionFolders = _libraryManager.RootFolder.Children.OfType<CollectionFolder>().ToList();
-            var musicFolder = allCollectionFolders.FirstOrDefault(f =>
-                f.CollectionType == CollectionType.music
-                || string.Equals(f.CollectionType?.ToString(), "music", StringComparison.OrdinalIgnoreCase)
-                || f.Name.Contains("music", StringComparison.OrdinalIgnoreCase)
-                || f.Name.Contains("musica", StringComparison.OrdinalIgnoreCase));
-            if (musicFolder != null)
+            var user = userId.HasValue && userId.Value != Guid.Empty ? _userManager.GetUserById(userId.Value) : null;
+            user ??= _userManager.GetUsers().FirstOrDefault();
+
+            // 1. Look through the user's accessible views (the exact same views used by SearchManager's access filtering)
+            if (user != null)
             {
-                if (musicFolder.PhysicalFolderIds.Length > 0 && _libraryManager.GetItemById(musicFolder.PhysicalFolderIds[0]) is Folder phys)
+                var userViews = _userViewManager.GetUserViews(new UserViewQuery
                 {
-                    return phys;
+                    User = user,
+                    IncludeHidden = true,
+                    IncludeExternalContent = true
+                });
+
+                // Priority 1: User has a dedicated music library / view
+                var musicView = userViews.FirstOrDefault(v =>
+                    (v is CollectionFolder cf && (cf.CollectionType == CollectionType.music || string.Equals(cf.CollectionType?.ToString(), "music", StringComparison.OrdinalIgnoreCase)))
+                    || (v is UserView uv && (uv.ViewType == CollectionType.music || string.Equals(uv.ViewType?.ToString(), "music", StringComparison.OrdinalIgnoreCase)))
+                    || v.Name.Contains("music", StringComparison.OrdinalIgnoreCase)
+                    || v.Name.Contains("musica", StringComparison.OrdinalIgnoreCase));
+
+                if (musicView != null)
+                {
+                    var phys = ResolvePhysicalFolderFromView(musicView);
+                    if (phys != null)
+                    {
+                        _logger.LogInformation("Resolved music parent physical folder from music view '{Name}' -> '{PhysName}' ({PhysId})", musicView.Name, phys.Name, phys.Id);
+                        return phys;
+                    }
                 }
 
-                return musicFolder;
-            }
-
-            // 2. Look in the user's accessible collection folders (so TopParentId matches queryTopParentIds)
-            if (userId.HasValue && userId.Value != Guid.Empty)
-            {
-                var user = _userManager.GetUserById(userId.Value);
-                if (user != null)
+                // Priority 2: Any accessible user library folder (e.g. Movies, Series, etc.)
+                // Placing music under a real library physical folder ensures TopParentId is valid and passes SearchManager's user access filter!
+                foreach (var view in userViews)
                 {
-                    var userRoot = _libraryManager.GetUserRootFolder();
-                    var userViews = userRoot.GetChildren(user, true).OfType<CollectionFolder>().ToList();
-                    if (userViews.Count > 0)
+                    var phys = ResolvePhysicalFolderFromView(view);
+                    if (phys != null)
                     {
-                        var firstView = userViews[0];
-                        if (firstView.PhysicalFolderIds.Length > 0 && _libraryManager.GetItemById(firstView.PhysicalFolderIds[0]) is Folder phys)
-                        {
-                            return phys;
-                        }
-
-                        return firstView;
+                        _logger.LogInformation("Resolved music parent physical folder from accessible view '{Name}' -> '{PhysName}' ({PhysId})", view.Name, phys.Name, phys.Id);
+                        return phys;
                     }
                 }
             }
 
-            // 3. Fallback to any collection folder on the server
-            if (allCollectionFolders.Count > 0)
+            // 2. Look in GetUserRootFolder().Children (which holds CollectionFolders on the server)
+            var userRoot = _libraryManager.GetUserRootFolder();
+            if (userRoot?.Children != null)
             {
-                var first = allCollectionFolders[0];
-                if (first.PhysicalFolderIds.Length > 0 && _libraryManager.GetItemById(first.PhysicalFolderIds[0]) is Folder phys)
+                var rootFolders = userRoot.Children.OfType<Folder>().ToList();
+                var musicCf = rootFolders.OfType<CollectionFolder>().FirstOrDefault(cf =>
+                    cf.CollectionType == CollectionType.music
+                    || string.Equals(cf.CollectionType?.ToString(), "music", StringComparison.OrdinalIgnoreCase)
+                    || cf.Name.Contains("music", StringComparison.OrdinalIgnoreCase)
+                    || cf.Name.Contains("musica", StringComparison.OrdinalIgnoreCase));
+
+                if (musicCf != null)
                 {
-                    return phys;
+                    var phys = ResolvePhysicalFolderFromView(musicCf);
+                    if (phys != null)
+                    {
+                        return phys;
+                    }
                 }
 
-                return first;
+                foreach (var folder in rootFolders)
+                {
+                    var phys = ResolvePhysicalFolderFromView(folder);
+                    if (phys != null)
+                    {
+                        return phys;
+                    }
+                }
+
+                if (rootFolders.Count > 0)
+                {
+                    return rootFolders[0];
+                }
             }
 
-            return _libraryManager.RootFolder;
+            // 3. Look in _libraryManager.GetVirtualFolders()
+            try
+            {
+                var virtualFolders = _libraryManager.GetVirtualFolders();
+                if (virtualFolders != null)
+                {
+                    var musicVf = virtualFolders.FirstOrDefault(vf =>
+                        string.Equals(vf.CollectionType?.ToString(), "music", StringComparison.OrdinalIgnoreCase)
+                        || vf.Name.Contains("music", StringComparison.OrdinalIgnoreCase)
+                        || vf.Name.Contains("musica", StringComparison.OrdinalIgnoreCase));
+
+                    if (musicVf != null && Guid.TryParse(musicVf.ItemId, out var musicFolderGuid))
+                    {
+                        var folder = _libraryManager.GetItemById(musicFolderGuid);
+                        if (folder != null)
+                        {
+                            var phys = ResolvePhysicalFolderFromView(folder);
+                            if (phys != null)
+                            {
+                                _logger.LogInformation("Resolved music parent physical folder from virtual folder '{Name}' -> '{PhysName}' ({PhysId})", musicVf.Name, phys.Name, phys.Id);
+                                return phys;
+                            }
+                        }
+                    }
+
+                    foreach (var vf in virtualFolders)
+                    {
+                        if (Guid.TryParse(vf.ItemId, out var vfGuid))
+                        {
+                            var folder = _libraryManager.GetItemById(vfGuid);
+                            if (folder != null)
+                            {
+                                var phys = ResolvePhysicalFolderFromView(folder);
+                                if (phys != null)
+                                {
+                                    _logger.LogInformation("Resolved music parent physical folder from virtual folder '{Name}' -> '{PhysName}' ({PhysId})", vf.Name, phys.Name, phys.Id);
+                                    return phys;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not check GetVirtualFolders()");
+            }
+
+            // 4. Look in _libraryManager.RootFolder
+            try
+            {
+                var root = _libraryManager.RootFolder;
+                if (root?.Children != null)
+                {
+                    foreach (var child in root.Children.OfType<Folder>())
+                    {
+                        var phys = ResolvePhysicalFolderFromView(child);
+                        if (phys != null)
+                        {
+                            return phys;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not check RootFolder children");
+            }
+
+            return _libraryManager.GetUserRootFolder();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not resolve music parent folder, using RootFolder fallback.");
-            return _libraryManager.RootFolder;
+            _logger.LogError(ex, "Could not resolve physical music parent folder");
+            return _libraryManager.GetUserRootFolder();
         }
+    }
+
+    private Folder? ResolvePhysicalFolderFromView(BaseItem view)
+    {
+        if (view is UserView uv)
+        {
+            if (uv.DisplayParentId != Guid.Empty)
+            {
+                var parent = _libraryManager.GetItemById(uv.DisplayParentId);
+                if (parent is CollectionFolder cf && cf.PhysicalFolderIds.Length > 0)
+                {
+                    if (_libraryManager.GetItemById(cf.PhysicalFolderIds[0]) is Folder phys)
+                    {
+                        return phys;
+                    }
+                }
+
+                if (parent is Folder pf)
+                {
+                    return pf;
+                }
+            }
+
+            if (uv.ParentId != Guid.Empty)
+            {
+                var parent = _libraryManager.GetItemById(uv.ParentId);
+                if (parent is CollectionFolder cf && cf.PhysicalFolderIds.Length > 0)
+                {
+                    if (_libraryManager.GetItemById(cf.PhysicalFolderIds[0]) is Folder phys)
+                    {
+                        return phys;
+                    }
+                }
+
+                if (parent is Folder pf)
+                {
+                    return pf;
+                }
+            }
+        }
+
+        if (view is CollectionFolder colf)
+        {
+            if (colf.PhysicalFolderIds.Length > 0 && _libraryManager.GetItemById(colf.PhysicalFolderIds[0]) is Folder phys)
+            {
+                return phys;
+            }
+
+            return colf;
+        }
+
+        if (view is Folder folder)
+        {
+            return folder;
+        }
+
+        return null;
+    }
+
+    private static float CalculateScore(string? title, string searchTerm, float exactScore, float startsWithScore, float containsScore, float baseScore)
+    {
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return baseScore;
+        }
+
+        var t = title.Trim();
+        var s = searchTerm.Trim();
+
+        if (string.Equals(t, s, StringComparison.OrdinalIgnoreCase))
+        {
+            return exactScore;
+        }
+
+        if (t.StartsWith(s, StringComparison.OrdinalIgnoreCase))
+        {
+            return startsWithScore;
+        }
+
+        if (t.Contains(s, StringComparison.OrdinalIgnoreCase))
+        {
+            return containsScore;
+        }
+
+        return baseScore;
     }
 
     private void RecordSearchQuery(string query)

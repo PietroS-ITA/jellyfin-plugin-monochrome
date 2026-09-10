@@ -20,7 +20,7 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="1.3.3.0"
+VERSION="1.3.4.0"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
 mkdir -p "$PACKAGE_DIR"
@@ -52,11 +52,19 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "versions": [
       {
         "version": "${VERSION}",
-        "changelog": "Esperienza streaming stile Spotify: 1) Monochrome Music rimosso dalla Home e dai tab superiori (canale disattivato di default). 2) Ricerca globale completa con risultati multipli (brani prioritari 0.98f, album 0.95f, artisti 0.90f) superando il filtro TopParentId di Jellyfin 12.0. 3) Salvataggio nei Preferiti (♥) e Playlist utente senza salvare file fisici su disco. 4) Autoplay radio e Instant Mix automatico basato su stile e genere tramite ILocalSimilarItemsProvider e TIDAL Radio.",
+        "changelog": "Risolto il problema della ricerca globale che mostrava un solo risultato e preferiva artisti ai brani: 1) Risoluzione accurata della cartella fisica della libreria (PhysicalFolderIds) tramite viste utente e cartelle virtuali, superando il filtro TopParentId di FilterByUserAccessAsync in Jellyfin 12.0. 2) Ranking prioritario intelligente: brani con titolo esatto (es. 'Magnetic') hanno punteggio 100f e compaiono in cima alla lista prima di album e artisti. 3) Salvataggio istantaneo nei Preferiti utente senza file fisici sul server. 4) Autoplay radio su stile e genere.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_${VERSION}.zip",
         "checksum": "${MD5_CHECKSUM}",
         "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
+        "version": "1.3.3.0",
+        "changelog": "Esperienza streaming stile Spotify: 1) Monochrome Music rimosso dalla Home e dai tab superiori (canale disattivato di default). 2) Ricerca globale completa con risultati multipli (brani prioritari 0.98f, album 0.95f, artisti 0.90f) superando il filtro TopParentId di Jellyfin 12.0. 3) Salvataggio nei Preferiti (♥) e Playlist utente senza salvare file fisici su disco. 4) Autoplay radio e Instant Mix automatico basato su stile e genere tramite ILocalSimilarItemsProvider e TIDAL Radio.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.3.0.zip",
+        "checksum": "af3cf8248cfc02908fb74dfb5c03008b",
+        "timestamp": "2026-09-10T13:40:29Z"
       },
       {
         "version": "1.3.2.0",
