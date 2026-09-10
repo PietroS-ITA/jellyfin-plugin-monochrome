@@ -8,6 +8,14 @@
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.3.0.0",
+        "changelog": "Risolto il problema della ricerca globale che non trovava risultati: corretta l'associazione della cartella genitore CollectionFolder per superare i filtri di accesso utente Jellyfin. Risolto l'errore di riproduzione 'file non supportato': implementato il download e la concatenazione sequenziale dei segmenti fMP4/FLAC con caching locale, abilitando riproduzione fluida, transcodifica e seeking per tutti i client.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/Jellyfin.Plugin.Monochrome_1.3.0.0.zip",
+        "checksum": "d6e3a170b0ed9880893736af89769781",
+        "timestamp": "2026-09-10T11:03:01Z"
+      },
+      {
         "version": "1.2.0.0",
         "changelog": "Integrazione nativa con la ricerca globale di Jellyfin 12.0 (ISearchProvider, IExternalSearchProvider, IMediaSourceProvider) accessibile a tutti gli utenti (base e admin). Rimosse tab e restrizioni di amministrazione.",
         "targetAbi": "12.0.0.0",

@@ -60,7 +60,7 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         }
 
         var term = query.SearchTerm.Trim();
-        if (term.Length < 2)
+        if (term.Length == 0)
         {
             return false;
         }
@@ -199,6 +199,20 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         var existing = _libraryManager.GetItemById(trackGuid);
         if (existing != null)
         {
+            if (existing.ParentId == Guid.Empty && parentFolder != null)
+            {
+                existing.SetParent(parentFolder);
+                existing.ParentId = parentFolder.Id;
+                try
+                {
+                    _libraryManager.UpdateItemAsync(existing, parentFolder, ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Could not update ParentId for track {TrackId}", track.Id);
+                }
+            }
+
             return;
         }
 
@@ -210,9 +224,15 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
             Album = track.Album?.Title ?? "",
             RunTimeTicks = track.Duration * TimeSpan.TicksPerSecond,
             Path = $"monochrome://track/{track.Id}",
-            Container = "flac",
+            Container = "mp4",
             IndexNumber = track.TrackNumber
         };
+
+        if (parentFolder != null)
+        {
+            audio.SetParent(parentFolder);
+            audio.ParentId = parentFolder.Id;
+        }
 
         audio.SetProviderId("MonochromeTrack", track.Id.ToString(CultureInfo.InvariantCulture));
         audio.SetProviderId("TidalTrack", track.Id.ToString(CultureInfo.InvariantCulture));
@@ -237,7 +257,7 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to register Monochrome track {TrackId} in library", track.Id);
+            _logger.LogError(ex, "Failed to register Monochrome track {TrackId} in library", track.Id);
         }
     }
 
@@ -246,6 +266,20 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         var existing = _libraryManager.GetItemById(albumGuid);
         if (existing != null)
         {
+            if (existing.ParentId == Guid.Empty && parentFolder != null)
+            {
+                existing.SetParent(parentFolder);
+                existing.ParentId = parentFolder.Id;
+                try
+                {
+                    _libraryManager.UpdateItemAsync(existing, parentFolder, ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Could not update ParentId for album {AlbumId}", album.Id);
+                }
+            }
+
             return;
         }
 
@@ -258,6 +292,12 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
             AlbumArtists = [ artistName ],
             ProductionYear = album.ReleaseDate != null && DateTime.TryParse(album.ReleaseDate, out var dt) ? dt.Year : null
         };
+
+        if (parentFolder != null)
+        {
+            musicAlbum.SetParent(parentFolder);
+            musicAlbum.ParentId = parentFolder.Id;
+        }
 
         musicAlbum.SetProviderId("MonochromeAlbum", album.Id.ToString(CultureInfo.InvariantCulture));
         musicAlbum.SetProviderId("TidalAlbum", album.Id.ToString(CultureInfo.InvariantCulture));
@@ -282,7 +322,7 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to register Monochrome album {AlbumId} in library", album.Id);
+            _logger.LogError(ex, "Failed to register Monochrome album {AlbumId} in library", album.Id);
         }
     }
 
@@ -291,6 +331,20 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         var existing = _libraryManager.GetItemById(artistGuid);
         if (existing != null)
         {
+            if (existing.ParentId == Guid.Empty && parentFolder != null)
+            {
+                existing.SetParent(parentFolder);
+                existing.ParentId = parentFolder.Id;
+                try
+                {
+                    _libraryManager.UpdateItemAsync(existing, parentFolder, ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Could not update ParentId for artist {ArtistId}", artist.Id);
+                }
+            }
+
             return;
         }
 
@@ -299,6 +353,12 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
             Id = artistGuid,
             Name = artist.Name
         };
+
+        if (parentFolder != null)
+        {
+            musicArtist.SetParent(parentFolder);
+            musicArtist.ParentId = parentFolder.Id;
+        }
 
         musicArtist.SetProviderId("MonochromeArtist", artist.Id.ToString(CultureInfo.InvariantCulture));
         musicArtist.SetProviderId("TidalArtist", artist.Id.ToString(CultureInfo.InvariantCulture));
@@ -323,7 +383,7 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to register Monochrome artist {ArtistId} in library", artist.Id);
+            _logger.LogError(ex, "Failed to register Monochrome artist {ArtistId} in library", artist.Id);
         }
     }
 
@@ -331,41 +391,30 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
     {
         try
         {
-            // 1. Try to find a music library from user's views
+            // 1. Try to find a music library from user's accessible library folders
             if (userId.HasValue && userId.Value != Guid.Empty)
             {
                 var user = _userManager.GetUserById(userId.Value);
                 if (user != null)
                 {
-                    var userViews = _userViewManager.GetUserViews(new UserViewQuery { User = user });
-                    var musicView = userViews.OfType<UserView>().FirstOrDefault(v => v.ViewType == CollectionType.music || v.CollectionType == CollectionType.music);
-                    if (musicView != null)
-                    {
-                        var targetId = musicView.DisplayParentId != Guid.Empty ? musicView.DisplayParentId : musicView.Id;
-                        if (_libraryManager.GetItemById(targetId) is Folder folder)
-                        {
-                            return folder;
-                        }
+                    var userRoot = _libraryManager.GetUserRootFolder();
+                    var userFolders = userRoot.GetChildren(user, true).OfType<Folder>().ToList();
 
-                        return musicView;
+                    var musicFolder = userFolders.FirstOrDefault(f =>
+                        f is CollectionFolder cf && cf.CollectionType == CollectionType.music);
+                    if (musicFolder != null)
+                    {
+                        return musicFolder;
                     }
 
-                    // Fallback to first user view so it passes user library filtering
-                    var firstView = userViews.FirstOrDefault();
-                    if (firstView != null)
+                    if (userFolders.Count > 0)
                     {
-                        var targetId = firstView.DisplayParentId != Guid.Empty ? firstView.DisplayParentId : firstView.Id;
-                        if (_libraryManager.GetItemById(targetId) is Folder folder)
-                        {
-                            return folder;
-                        }
-
-                        return firstView;
+                        return userFolders[0];
                     }
                 }
             }
 
-            // 2. Try to find any music virtual folder
+            // 2. Try global virtual folders
             var virtualFolders = _libraryManager.GetVirtualFolders();
             var musicVirtualFolder = virtualFolders.FirstOrDefault(v => v.CollectionType == CollectionTypeOptions.music)
                 ?? virtualFolders.FirstOrDefault();
@@ -377,15 +426,15 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                 }
             }
 
-            // 3. Fallback to first folder in RootFolder
-            var rootChildren = _libraryManager.RootFolder.Children;
-            var firstFolder = rootChildren.OfType<Folder>().FirstOrDefault();
-            if (firstFolder != null)
+            // 3. Fallback to RootFolder children
+            var rootFolders = _libraryManager.RootFolder.Children.OfType<Folder>().ToList();
+            var rootMusic = rootFolders.FirstOrDefault(f => f is CollectionFolder cf && cf.CollectionType == CollectionType.music)
+                ?? rootFolders.FirstOrDefault();
+            if (rootMusic != null)
             {
-                return firstFolder;
+                return rootMusic;
             }
 
-            // 4. Fallback to RootFolder
             return _libraryManager.RootFolder;
         }
         catch (Exception ex)

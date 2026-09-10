@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -9,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Jellyfin.Plugin.Monochrome.Configuration;
+using MediaBrowser.Common.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Monochrome.Api;
@@ -24,20 +27,27 @@ public class MonochromeApiClient
     private const string TidalApiBase = "https://api.tidal.com/v1";
 
     private readonly HttpClient _httpClient;
+    private readonly IApplicationPaths _applicationPaths;
     private readonly ILogger<MonochromeApiClient> _logger;
 
     private string? _cachedToken;
     private DateTime _tokenExpiry = DateTime.MinValue;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
+    private readonly ConcurrentDictionary<long, SemaphoreSlim> _trackDownloadLocks = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MonochromeApiClient"/> class.
     /// </summary>
     /// <param name="httpClient">The HTTP client instance.</param>
+    /// <param name="applicationPaths">The application paths.</param>
     /// <param name="logger">The logger instance.</param>
-    public MonochromeApiClient(HttpClient httpClient, ILogger<MonochromeApiClient> logger)
+    public MonochromeApiClient(
+        HttpClient httpClient,
+        IApplicationPaths applicationPaths,
+        ILogger<MonochromeApiClient> logger)
     {
         _httpClient = httpClient;
+        _applicationPaths = applicationPaths;
         _logger = logger;
 
         if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
@@ -403,6 +413,60 @@ public class MonochromeApiClient
                 var doc = XDocument.Parse(decodedText);
                 XNamespace ns = doc.Root?.Name.Namespace ?? XNamespace.None;
 
+                // Check for SegmentTemplate (TIDAL fMP4 DASH stream)
+                var segTemplate = doc.Descendants(ns + "SegmentTemplate").FirstOrDefault();
+                if (segTemplate != null)
+                {
+                    var initAttr = segTemplate.Attribute("initialization")?.Value;
+                    var mediaAttr = segTemplate.Attribute("media")?.Value;
+                    var startNumberStr = segTemplate.Attribute("startNumber")?.Value ?? "1";
+                    int.TryParse(startNumberStr, out var startNumber);
+                    if (startNumber <= 0)
+                    {
+                        startNumber = 1;
+                    }
+
+                    var sElements = doc.Descendants(ns + "S").ToList();
+                    int totalSegments = 0;
+                    foreach (var s in sElements)
+                    {
+                        var rAttr = s.Attribute("r")?.Value;
+                        int repeat = 0;
+                        if (!string.IsNullOrEmpty(rAttr) && int.TryParse(rAttr, out var rVal))
+                        {
+                            repeat = rVal;
+                        }
+
+                        totalSegments += 1 + repeat;
+                    }
+
+                    if (!string.IsNullOrEmpty(initAttr) && !string.IsNullOrEmpty(mediaAttr) && totalSegments > 0)
+                    {
+                        var segmentUrls = new List<string>(totalSegments);
+                        for (int i = startNumber; i < startNumber + totalSegments; i++)
+                        {
+                            segmentUrls.Add(mediaAttr.Replace("$Number$", i.ToString()));
+                        }
+
+                        var rep = doc.Descendants(ns + "Representation").FirstOrDefault();
+                        var codecs = rep?.Attribute("codecs")?.Value ?? "flac";
+                        var isFlac = codecs.Contains("flac", StringComparison.OrdinalIgnoreCase);
+
+                        return new ResolvedStream
+                        {
+                            Url = segmentUrls[0],
+                            Container = "mp4",
+                            Codec = isFlac ? "flac" : "aac",
+                            BitDepth = playbackInfo.BitDepth,
+                            SampleRate = playbackInfo.SampleRate,
+                            Quality = playbackInfo.AudioQuality ?? "LOSSLESS",
+                            IsDash = true,
+                            DashInitUrl = initAttr,
+                            DashSegmentUrls = segmentUrls
+                        };
+                    }
+                }
+
                 // Look for BaseURL inside Representation or AdaptationSet
                 var baseUrlElem = doc.Descendants(ns + "BaseURL").FirstOrDefault();
                 if (baseUrlElem != null && !string.IsNullOrWhiteSpace(baseUrlElem.Value))
@@ -411,7 +475,7 @@ public class MonochromeApiClient
                     return new ResolvedStream
                     {
                         Url = dashUrl,
-                        Container = "flac",
+                        Container = "mp4",
                         Codec = "flac",
                         BitDepth = playbackInfo.BitDepth,
                         SampleRate = playbackInfo.SampleRate,
@@ -443,6 +507,138 @@ public class MonochromeApiClient
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Ensures that the audio track is downloaded and cached locally as a complete, playable audio file on the Jellyfin server.
+    /// Returns the absolute path to the local audio file (.mp4 or .flac).
+    /// </summary>
+    public async Task<string> EnsureTrackCachedAsync(long trackId, CancellationToken cancellationToken = default)
+    {
+        var cacheDir = Path.Combine(_applicationPaths.CachePath, "monochrome");
+        Directory.CreateDirectory(cacheDir);
+
+        var cacheFile = Path.Combine(cacheDir, $"{trackId}.mp4");
+        var flacFile = Path.Combine(cacheDir, $"{trackId}.flac");
+
+        if (File.Exists(cacheFile) && new FileInfo(cacheFile).Length > 1024)
+        {
+            return cacheFile;
+        }
+
+        if (File.Exists(flacFile) && new FileInfo(flacFile).Length > 1024)
+        {
+            return flacFile;
+        }
+
+        var trackLock = _trackDownloadLocks.GetOrAdd(trackId, _ => new SemaphoreSlim(1, 1));
+        await trackLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (File.Exists(cacheFile) && new FileInfo(cacheFile).Length > 1024)
+            {
+                return cacheFile;
+            }
+
+            if (File.Exists(flacFile) && new FileInfo(flacFile).Length > 1024)
+            {
+                return flacFile;
+            }
+
+            _logger.LogInformation("Resolving stream for track {TrackId} to cache locally...", trackId);
+            var resolved = await ResolveTrackStreamAsync(trackId, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            var isMp4 = resolved.Container.Equals("mp4", StringComparison.OrdinalIgnoreCase) || resolved.IsDash;
+            var targetFile = isMp4 ? cacheFile : Path.Combine(cacheDir, $"{trackId}.{resolved.Container}");
+            var tempFile = $"{targetFile}.tmp.{Guid.NewGuid():N}";
+
+            if (resolved.IsDash && !string.IsNullOrEmpty(resolved.DashInitUrl) && resolved.DashSegmentUrls.Count > 0)
+            {
+                _logger.LogInformation("Downloading {Count} DASH segments for track {TrackId}...", resolved.DashSegmentUrls.Count, trackId);
+                using (var fileStream = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None, 65536, true))
+                {
+                    // 1. Write initialization segment
+                    using var initReq = new HttpRequestMessage(HttpMethod.Get, resolved.DashInitUrl);
+                    using var initRes = await _httpClient.SendAsync(initReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                    initRes.EnsureSuccessStatusCode();
+                    await initRes.Content.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+
+                    // 2. Write media segments sequentially
+                    foreach (var segUrl in resolved.DashSegmentUrls)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        using var segReq = new HttpRequestMessage(HttpMethod.Get, segUrl);
+                        using var segRes = await _httpClient.SendAsync(segReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                        segRes.EnsureSuccessStatusCode();
+                        await segRes.Content.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+            else
+            {
+                // Direct file download
+                _logger.LogInformation("Downloading direct stream for track {TrackId}...", trackId);
+                using var fileStream = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None, 65536, true);
+                using var streamReq = new HttpRequestMessage(HttpMethod.Get, resolved.Url);
+                using var streamRes = await _httpClient.SendAsync(streamReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                streamRes.EnsureSuccessStatusCode();
+                await streamRes.Content.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+            }
+
+            File.Move(tempFile, targetFile, true);
+            _logger.LogInformation("Track {TrackId} successfully cached at {Path} ({Bytes} bytes)", trackId, targetFile, new FileInfo(targetFile).Length);
+
+            // Clean older cached tracks in background if cache exceeds limit
+            _ = Task.Run(() => CleanCacheIfNecessary(cacheDir));
+
+            return targetFile;
+        }
+        finally
+        {
+            trackLock.Release();
+        }
+    }
+
+    private void CleanCacheIfNecessary(string cacheDir)
+    {
+        try
+        {
+            var dir = new DirectoryInfo(cacheDir);
+            if (!dir.Exists)
+            {
+                return;
+            }
+
+            var files = dir.GetFiles().OrderBy(f => f.LastAccessTimeUtc).ToList();
+            long totalSize = files.Sum(f => f.Length);
+            const long maxCacheBytes = 1500L * 1024L * 1024L; // 1.5 GB limit
+
+            if (totalSize > maxCacheBytes)
+            {
+                foreach (var f in files)
+                {
+                    if (totalSize <= maxCacheBytes * 0.8)
+                    {
+                        break;
+                    }
+
+                    try
+                    {
+                        var len = f.Length;
+                        f.Delete();
+                        totalSize -= len;
+                    }
+                    catch
+                    {
+                        // Ignore individual file deletion errors
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Cache cleanup encountered an issue.");
+        }
     }
 
     /// <summary>

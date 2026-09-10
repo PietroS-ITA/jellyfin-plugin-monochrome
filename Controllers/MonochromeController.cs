@@ -57,40 +57,11 @@ public class MonochromeController : ControllerBase
 
         try
         {
-            var resolved = await _apiClient.ResolveTrackStreamAsync(trackId, quality, cancellationToken).ConfigureAwait(false);
+            var cachedFile = await _apiClient.EnsureTrackCachedAsync(trackId, cancellationToken).ConfigureAwait(false);
+            var isMp4 = cachedFile.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
+            var contentType = isMp4 ? "audio/mp4" : "audio/flac";
 
-            var enableProxy = Plugin.Instance?.Configuration.EnableStreamProxy ?? false;
-            if (!enableProxy)
-            {
-                // Redirect directly to high-speed CDN stream
-                return Redirect(resolved.Url);
-            }
-
-            // Proxy through Jellyfin server
-            var httpClient = _httpClientFactory.CreateClient();
-            var proxyRequest = new HttpRequestMessage(HttpMethod.Get, resolved.Url);
-
-            // Forward Range header if client requested seeking
-            if (Request.Headers.TryGetValue("Range", out var rangeHeader))
-            {
-                proxyRequest.Headers.TryAddWithoutValidation("Range", (string?)rangeHeader);
-            }
-
-            var proxyResponse = await httpClient.SendAsync(
-                proxyRequest,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken).ConfigureAwait(false);
-
-            var contentType = resolved.Container.Equals("flac", StringComparison.OrdinalIgnoreCase)
-                ? "audio/flac"
-                : "audio/mp4";
-
-            return new FileStreamResult(
-                await proxyResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false),
-                contentType)
-            {
-                EnableRangeProcessing = true
-            };
+            return PhysicalFile(cachedFile, contentType, enableRangeProcessing: true);
         }
         catch (Exception ex)
         {

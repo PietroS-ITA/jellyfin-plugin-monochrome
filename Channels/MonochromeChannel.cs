@@ -455,18 +455,18 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
             throw new ArgumentException($"Invalid track ID: {id}", nameof(id));
         }
 
-        _logger.LogInformation("Resolving audio stream for track ID: {TrackId}", trackId);
-        var stream = await _apiClient.ResolveTrackStreamAsync(trackId, cancellationToken: cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("Resolving cached audio stream for channel track ID: {TrackId}", trackId);
+        var localFile = await _apiClient.EnsureTrackCachedAsync(trackId, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var isMp4 = localFile.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
 
         var mediaSource = new MediaSourceInfo
         {
             Id = id,
-            Path = stream.Url,
-            Protocol = MediaProtocol.Http,
-            Container = stream.Container,
-            EncoderProtocol = MediaProtocol.Http,
-            IsRemote = true,
-            SupportsDirectPlay = true,
+            Path = localFile,
+            Protocol = MediaProtocol.File,
+            Container = isMp4 ? "mp4" : "flac",
+            IsRemote = false,
+            SupportsDirectPlay = false,
             SupportsDirectStream = true,
             SupportsTranscoding = true,
             MediaStreams = new List<MediaStream>
@@ -476,9 +476,7 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
                     Type = MediaStreamType.Audio,
                     Index = 0,
                     IsDefault = true,
-                    Codec = stream.Codec,
-                    SampleRate = stream.SampleRate,
-                    BitDepth = stream.BitDepth
+                    Codec = "flac"
                 }
             }
         };

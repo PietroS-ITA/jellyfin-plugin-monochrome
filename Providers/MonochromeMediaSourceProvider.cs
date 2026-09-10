@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
@@ -46,38 +47,39 @@ public class MonochromeMediaSourceProvider : IMediaSourceProvider
 
         try
         {
-            var streamInfo = await _apiClient.ResolveTrackStreamAsync(trackId, cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (streamInfo == null || string.IsNullOrEmpty(streamInfo.Url))
+            var localFile = await _apiClient.EnsureTrackCachedAsync(trackId, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(localFile) || !File.Exists(localFile))
             {
-                _logger.LogWarning("Monochrome playback stream URL was empty for track {TrackId}", trackId);
+                _logger.LogWarning("Monochrome cached file was empty or missing for track {TrackId}", trackId);
                 return [];
             }
 
-            var streamUrl = streamInfo.Url;
-            var codec = !string.IsNullOrEmpty(streamInfo.Codec) ? streamInfo.Codec : "flac";
-            var container = !string.IsNullOrEmpty(streamInfo.Container) ? streamInfo.Container : "flac";
+            var fileInfo = new FileInfo(localFile);
+            var isMp4 = localFile.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
+            var container = isMp4 ? "mp4" : "flac";
 
             var mediaSource = new MediaSourceInfo
             {
                 Id = item.Id.ToString("N"),
-                Path = streamUrl,
-                Protocol = MediaProtocol.Http,
+                Path = localFile,
+                Protocol = MediaProtocol.File,
+                Container = container,
+                Name = item.Name,
+                Size = fileInfo.Length,
+                SupportsDirectPlay = false,
+                SupportsDirectStream = true,
+                SupportsTranscoding = true,
+                IsRemote = false,
                 MediaStreams =
                 [
                     new MediaStream
                     {
                         Type = MediaStreamType.Audio,
-                        Codec = codec,
+                        Codec = "flac",
                         Index = 0,
                         IsDefault = true
                     }
-                ],
-                Container = container,
-                Name = item.Name,
-                SupportsDirectPlay = true,
-                SupportsDirectStream = true,
-                SupportsTranscoding = true,
-                IsRemote = true
+                ]
             };
 
             return [mediaSource];

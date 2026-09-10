@@ -185,5 +185,8 @@ public class ResolvedStream
     public int? BitDepth { get; set; }
     public int? SampleRate { get; set; }
     public string Quality { get; set; } = "LOSSLESS";
+    public bool IsDash { get; set; }
+    public string? DashInitUrl { get; set; }
+    public List<string> DashSegmentUrls { get; set; } = new();
 }
 
