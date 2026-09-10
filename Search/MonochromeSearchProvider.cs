@@ -245,7 +245,9 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
             _logger.LogDebug(ex, "Could not pre-register artist {ArtistName}", artistName);
         }
 
-        var cacheFile = Path.Combine(_applicationPaths.CachePath, "monochrome", $"{track.Id}.mp4");
+        var cacheFlac = Path.Combine(_applicationPaths.CachePath, "monochrome", $"{track.Id}.flac");
+        var cacheM4a = Path.Combine(_applicationPaths.CachePath, "monochrome", $"{track.Id}.m4a");
+        var cacheFile = File.Exists(cacheFlac) ? cacheFlac : (File.Exists(cacheM4a) ? cacheM4a : cacheFlac);
         var existing = _libraryManager.GetItemById(trackGuid);
         if (existing != null)
         {
@@ -258,10 +260,10 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
 
             if (existing is Audio existingAudio)
             {
-                if (existingAudio.Path != null && existingAudio.Path.StartsWith("monochrome://track/", StringComparison.OrdinalIgnoreCase))
+                if (existingAudio.Path != null && (existingAudio.Path.StartsWith("monochrome://track/", StringComparison.OrdinalIgnoreCase) || existingAudio.Path.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)))
                 {
                     existingAudio.Path = cacheFile;
-                    existingAudio.Container = "mp4";
+                    existingAudio.Container = "flac";
                     needsUpdate = true;
                 }
 
@@ -326,7 +328,7 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
             Album = albumTitle,
             RunTimeTicks = track.Duration * TimeSpan.TicksPerSecond,
             Path = cacheFile,
-            Container = "mp4",
+            Container = "flac",
             IndexNumber = track.TrackNumber,
             ExternalId = $"track_{track.Id}",
             PresentationUniqueKey = trackGuid.ToString("N", CultureInfo.InvariantCulture)

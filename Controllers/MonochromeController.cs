@@ -106,8 +106,9 @@ public class MonochromeController : ControllerBase
         try
         {
             var cachedFile = await _apiClient.EnsureTrackCachedAsync(trackId, cancellationToken).ConfigureAwait(false);
-            var isMp4 = cachedFile.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
-            var contentType = isMp4 ? "audio/mp4" : "audio/flac";
+            var isFlac = cachedFile.EndsWith(".flac", StringComparison.OrdinalIgnoreCase);
+            var isM4a = cachedFile.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase);
+            var contentType = isFlac ? "audio/flac" : (isM4a ? "audio/mp4" : "audio/flac");
 
             return PhysicalFile(cachedFile, contentType, enableRangeProcessing: true);
         }

@@ -62,8 +62,10 @@ public class MonochromeMediaSourceProvider : IMediaSourceProvider
             }
 
             var fileInfo = new FileInfo(localFile);
-            var isMp4 = localFile.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
-            var container = isMp4 ? "mp4" : "flac";
+            var isFlac = localFile.EndsWith(".flac", StringComparison.OrdinalIgnoreCase);
+            var isM4a = localFile.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase);
+            var container = isFlac ? "flac" : (isM4a ? "m4a" : "flac");
+            var codec = isFlac ? "flac" : "aac";
 
             // Update item in library so that its path points to the real cached file
             if (item is Audio audioItem && (audioItem.Path != localFile || audioItem.Container != container))
@@ -89,7 +91,7 @@ public class MonochromeMediaSourceProvider : IMediaSourceProvider
                     new MediaStream
                     {
                         Type = MediaStreamType.Audio,
-                        Codec = "flac",
+                        Codec = codec,
                         Index = 0,
                         IsDefault = true,
                         Channels = 2,
@@ -114,12 +116,14 @@ public class MonochromeMediaSourceProvider : IMediaSourceProvider
                 SupportsDirectStream = true,
                 SupportsTranscoding = true,
                 IsRemote = false,
+                RequiresOpening = false,
+                RequiresClosing = false,
                 MediaStreams =
                 [
                     new MediaStream
                     {
                         Type = MediaStreamType.Audio,
-                        Codec = "flac",
+                        Codec = codec,
                         Index = 0,
                         IsDefault = true,
                         Channels = 2,

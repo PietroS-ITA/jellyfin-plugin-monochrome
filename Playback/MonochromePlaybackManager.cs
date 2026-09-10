@@ -32,6 +32,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
     private readonly ILogger<MonochromePlaybackManager> _logger;
     private readonly ConcurrentDictionary<string, string> _lastQueuedRadioTrack = new();
     private readonly ConcurrentDictionary<string, List<Guid>> _sessionRadioQueues = new();
+    private readonly ConcurrentDictionary<Guid, List<Guid>> _userRadioQueues = new();
 
     public MonochromePlaybackManager(
         ISessionManager sessionManager,
@@ -121,11 +122,19 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                 }
             }
 
-            // 2. Repair legacy monochrome://track/ paths to local cache path
+            // 2. Repair legacy monochrome://track/ and .mp4 paths to local cache .flac path
             var cacheDir = Path.Combine(_applicationPaths.CachePath, "monochrome");
             using (var cmd2 = conn.CreateCommand())
             {
-                cmd2.CommandText = "UPDATE BaseItems SET Path = @cacheDir || '/' || SUBSTR(Path, 20) || '.mp4' WHERE Path LIKE 'monochrome://track/%';";
+                cmd2.CommandText = @"
+                    UPDATE BaseItems
+                    SET Path = CASE 
+                            WHEN Path LIKE 'monochrome://track/%' THEN @cacheDir || '/' || SUBSTR(Path, 20) || '.flac'
+                            WHEN Path LIKE '%.mp4' THEN REPLACE(Path, '.mp4', '.flac')
+                            ELSE Path
+                        END
+                    WHERE Type = 'MediaBrowser.Controller.Entities.Audio.Audio'
+                      AND (Path LIKE 'monochrome://track/%' OR Path LIKE '%.mp4' OR ExternalId LIKE 'track_%');";
                 var p1 = cmd2.CreateParameter();
                 p1.ParameterName = "@cacheDir";
                 p1.Value = cacheDir;
@@ -133,7 +142,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                 var affected = await cmd2.ExecuteNonQueryAsync().ConfigureAwait(false);
                 if (affected > 0)
                 {
-                    _logger.LogInformation("Monochrome DB Repair: Repaired {Count} items with legacy monochrome:// paths.", affected);
+                    _logger.LogInformation("Monochrome DB Repair: Repaired {Count} items with native FLAC container and paths.", affected);
                 }
             }
 
@@ -154,6 +163,19 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                 }
             }
 
+            using (var cmd3b = conn.CreateCommand())
+            {
+                cmd3b.CommandText = @"
+                    UPDATE MediaStreamInfos
+                    SET Codec = 'flac'
+                    WHERE Codec != 'flac' AND ItemId IN (
+                        SELECT Id FROM BaseItems
+                        WHERE Type = 'MediaBrowser.Controller.Entities.Audio.Audio'
+                          AND (Path LIKE '%.flac' OR Path LIKE '%monochrome%')
+                    );";
+                await cmd3b.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+
             // 4. Clean up single-track Album titles that match the track title (so artist name displays on subtitle)
             using (var cmd4 = conn.CreateCommand())
             {
@@ -170,7 +192,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                 }
             }
 
-            // 5. Purge any short preview cache files (< 4MB) from previous versions
+            // 5. Purge any short preview cache files (< 4MB) and remux existing .mp4 files to native .flac
             try
             {
                 if (Directory.Exists(cacheDir))
@@ -183,12 +205,27 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                             File.Delete(file);
                             _logger.LogInformation("Monochrome DB Repair: Purged short preview cache file {File} ({Bytes} bytes)", file, fi.Length);
                         }
+                        else
+                        {
+                            var targetFlac = Path.ChangeExtension(file, ".flac");
+                            if (!File.Exists(targetFlac) || new FileInfo(targetFlac).Length < 1024)
+                            {
+                                if (await _apiClient.RemuxToNativeAudioAsync(file, targetFlac, "flac", CancellationToken.None).ConfigureAwait(false))
+                                {
+                                    try { File.Delete(file); } catch { }
+                                }
+                            }
+                            else
+                            {
+                                try { File.Delete(file); } catch { }
+                            }
+                        }
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Monochrome DB Repair: Preview cache purge encountered an issue.");
+                _logger.LogDebug(ex, "Monochrome DB Repair: Preview cache purge and remux encountered an issue.");
             }
         }
         catch (Exception ex)
@@ -309,8 +346,12 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
 
                 if (queuedGuids.Count > 0)
                 {
-                    // Store the upcoming radio queue in memory for this session
+                    // Store the upcoming radio queue in memory for this session and user
                     _sessionRadioQueues[sessionId] = new List<Guid>(queuedGuids);
+                    if (e.Session.UserId != Guid.Empty)
+                    {
+                        _userRadioQueues[e.Session.UserId] = new List<Guid>(queuedGuids);
+                    }
 
                     // Pre-cache the first 2 upcoming radio tracks in the background so skip forward is instantaneous
                     _ = Task.Run(async () =>
@@ -355,9 +396,13 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
         }
 
         var sessionId = e.Session.Id;
-        if (!_sessionRadioQueues.TryGetValue(sessionId, out var queue) || queue.Count == 0)
+        List<Guid>? queue = null;
+        if (!_sessionRadioQueues.TryGetValue(sessionId, out queue) || queue.Count == 0)
         {
-            return;
+            if (e.Session.UserId == Guid.Empty || !_userRadioQueues.TryGetValue(e.Session.UserId, out queue) || queue.Count == 0)
+            {
+                return;
+            }
         }
 
         // Check if the stopped item was a Monochrome track

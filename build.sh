@@ -20,7 +20,7 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="${1:-1.3.7.0}"
+VERSION="${1:-1.3.8.0}"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
 mkdir -p "$PACKAGE_DIR"
@@ -51,12 +51,20 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.3.8.0",
+        "changelog": "Risolto definitivamente il blocco a metà / 30 secondi e il salto al brano successivo: 1) Remuxing istantaneo dei segmenti DASH fMP4 in contenitore nativo FLAC/M4A via FFmpeg (10ms): abilita DirectPlay nativo al 100% nei browser senza transcodifica live MPEG-TS che interrompeva l'audio. 2) Supporto seek / avanzamento rapido su tutta la durata della traccia tramite byte-range HTTP 206. 3) Coda radio/autoplay persistente tra sessioni e pre-caching per skip istantaneo. 4) Auto-conversione e migrazione del database e della cache locale all'avvio.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.8.0.zip",
+        "checksum": "${MD5_CHECKSUM}",
+        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
         "version": "1.3.7.0",
         "changelog": "Risolto troncamento a 30 secondi e skip avanti alla canzone successiva: 1) Risoluzione audio a durata INTERA (FLAC lossless da 3+ minuti anziche preview di 29.9s) tramite istanza worker HiFi dedicata con retry resiliente dei segmenti DASH. 2) Skip avanti / autoplay radio automatico: attivazione controlli multimediali di sessione, accodamento PlayLast e avanzamento automatico su PlaybackStopped. 3) Pre-caching in background delle tracce successive per passaggio istantaneo senza attese. 4) Pulizia automatica all'avvio delle vecchie anteprime da 30s (< 4MB) in cache.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.7.0.zip",
-        "checksum": "${MD5_CHECKSUM}",
-        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        "checksum": "b3545280eed327187c315a05ebb120ff",
+        "timestamp": "2026-09-10T19:19:05Z"
       },
       {
         "version": "1.3.6.0",

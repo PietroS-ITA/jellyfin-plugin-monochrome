@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -12,6 +13,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using Jellyfin.Plugin.Monochrome.Configuration;
 using MediaBrowser.Common.Configuration;
+using MediaBrowser.Controller.MediaEncoding;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Monochrome.Api;
@@ -29,7 +31,7 @@ public class MonochromeApiClient
     private readonly HttpClient _httpClient;
     private readonly IApplicationPaths _applicationPaths;
     private readonly ILogger<MonochromeApiClient> _logger;
-
+    private readonly IMediaEncoder? _mediaEncoder;
     private string? _cachedToken;
     private DateTime _tokenExpiry = DateTime.MinValue;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
@@ -41,14 +43,17 @@ public class MonochromeApiClient
     /// <param name="httpClient">The HTTP client instance.</param>
     /// <param name="applicationPaths">The application paths.</param>
     /// <param name="logger">The logger instance.</param>
+    /// <param name="mediaEncoder">The media encoder instance.</param>
     public MonochromeApiClient(
         HttpClient httpClient,
         IApplicationPaths applicationPaths,
-        ILogger<MonochromeApiClient> logger)
+        ILogger<MonochromeApiClient> logger,
+        IMediaEncoder? mediaEncoder = null)
     {
         _httpClient = httpClient;
         _applicationPaths = applicationPaths;
         _logger = logger;
+        _mediaEncoder = mediaEncoder;
 
         if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
         {
@@ -349,15 +354,12 @@ public class MonochromeApiClient
 
         // Candidate HiFi / Monochrome instances (full stream resolvers)
         var candidateEndpoints = new List<string>();
-        if (!string.IsNullOrWhiteSpace(Config.ApiBaseUrl))
+        const string DedicatedWorkerInstance = "https://hifi-api-workers.orbmusic.workers.dev";
+        candidateEndpoints.Add(DedicatedWorkerInstance);
+
+        if (!string.IsNullOrWhiteSpace(Config.ApiBaseUrl) && !candidateEndpoints.Contains(Config.ApiBaseUrl.TrimEnd('/'), StringComparer.OrdinalIgnoreCase))
         {
             candidateEndpoints.Add(Config.ApiBaseUrl.TrimEnd('/'));
-        }
-
-        const string FallbackInstance = "https://hifi-api-workers.orbmusic.workers.dev";
-        if (!candidateEndpoints.Contains(FallbackInstance, StringComparer.OrdinalIgnoreCase))
-        {
-            candidateEndpoints.Add(FallbackInstance);
         }
 
         // 1. Try HiFi / Monochrome instances first (gives full lossless FLAC/AAC streams)
@@ -578,59 +580,88 @@ public class MonochromeApiClient
 
     /// <summary>
     /// Ensures that the audio track is downloaded and cached locally as a complete, playable audio file on the Jellyfin server.
-    /// Returns the absolute path to the local audio file (.mp4 or .flac).
+    /// Returns the absolute path to the local audio file (.flac or .m4a).
     /// </summary>
     public async Task<string> EnsureTrackCachedAsync(long trackId, CancellationToken cancellationToken = default)
     {
         var cacheDir = Path.Combine(_applicationPaths.CachePath, "monochrome");
         Directory.CreateDirectory(cacheDir);
 
-        var cacheFile = Path.Combine(cacheDir, $"{trackId}.mp4");
         var flacFile = Path.Combine(cacheDir, $"{trackId}.flac");
+        var m4aFile = Path.Combine(cacheDir, $"{trackId}.m4a");
+        var legacyMp4File = Path.Combine(cacheDir, $"{trackId}.mp4");
 
-        // Validate existing cache: if smaller than 4MB, it may be an old 30s preview file that needs refreshing
-        if (File.Exists(cacheFile))
+        // 1. Check if already cached as native FLAC (> 4MB)
+        if (File.Exists(flacFile))
         {
-            var len = new FileInfo(cacheFile).Length;
+            var len = new FileInfo(flacFile).Length;
             if (len > 4L * 1024L * 1024L)
             {
-                return cacheFile;
+                return flacFile;
             }
 
-            _logger.LogInformation("Cached file for track {TrackId} is small ({Bytes} bytes), deleting to re-cache full stream...", trackId, len);
-            try { File.Delete(cacheFile); } catch { }
+            _logger.LogInformation("Cached FLAC for track {TrackId} is small ({Bytes} bytes), deleting to re-cache full stream...", trackId, len);
+            try { File.Delete(flacFile); } catch { }
         }
 
-        if (File.Exists(flacFile) && new FileInfo(flacFile).Length > 1024)
+        // 2. Check if already cached as M4A (> 2MB)
+        if (File.Exists(m4aFile))
         {
-            return flacFile;
+            var len = new FileInfo(m4aFile).Length;
+            if (len > 2L * 1024L * 1024L)
+            {
+                return m4aFile;
+            }
+
+            try { File.Delete(m4aFile); } catch { }
+        }
+
+        // 3. If legacy MP4 exists (> 4MB), attempt fast remux to FLAC right away
+        if (File.Exists(legacyMp4File))
+        {
+            var len = new FileInfo(legacyMp4File).Length;
+            if (len > 4L * 1024L * 1024L)
+            {
+                if (await RemuxToNativeAudioAsync(legacyMp4File, flacFile, "flac", cancellationToken).ConfigureAwait(false))
+                {
+                    try { File.Delete(legacyMp4File); } catch { }
+                    return flacFile;
+                }
+            }
+            else
+            {
+                try { File.Delete(legacyMp4File); } catch { }
+            }
         }
 
         var trackLock = _trackDownloadLocks.GetOrAdd(trackId, _ => new SemaphoreSlim(1, 1));
         await trackLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (File.Exists(cacheFile) && new FileInfo(cacheFile).Length > 4L * 1024L * 1024L)
-            {
-                return cacheFile;
-            }
-
-            if (File.Exists(flacFile) && new FileInfo(flacFile).Length > 1024)
+            if (File.Exists(flacFile) && new FileInfo(flacFile).Length > 4L * 1024L * 1024L)
             {
                 return flacFile;
+            }
+
+            if (File.Exists(m4aFile) && new FileInfo(m4aFile).Length > 2L * 1024L * 1024L)
+            {
+                return m4aFile;
             }
 
             _logger.LogInformation("Resolving stream for track {TrackId} to cache locally...", trackId);
             var resolved = await ResolveTrackStreamAsync(trackId, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            var isMp4 = resolved.Container.Equals("mp4", StringComparison.OrdinalIgnoreCase) || resolved.IsDash;
-            var targetFile = isMp4 ? cacheFile : Path.Combine(cacheDir, $"{trackId}.{resolved.Container}");
-            var tempFile = $"{targetFile}.tmp.{Guid.NewGuid():N}";
+            var isFlac = resolved.Codec.Contains("flac", StringComparison.OrdinalIgnoreCase)
+                         || resolved.Quality.Equals("LOSSLESS", StringComparison.OrdinalIgnoreCase)
+                         || resolved.Quality.Equals("HI_RES", StringComparison.OrdinalIgnoreCase);
+            var targetExt = isFlac ? "flac" : "m4a";
+            var targetFile = isFlac ? flacFile : m4aFile;
+            var tempRawFile = Path.Combine(cacheDir, $"{trackId}.raw.tmp.{Guid.NewGuid():N}");
 
             if (resolved.IsDash && !string.IsNullOrEmpty(resolved.DashInitUrl) && resolved.DashSegmentUrls.Count > 0)
             {
                 _logger.LogInformation("Downloading {Count} DASH segments for track {TrackId}...", resolved.DashSegmentUrls.Count, trackId);
-                using (var fileStream = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None, 65536, true))
+                using (var fileStream = new FileStream(tempRawFile, FileMode.Create, FileAccess.Write, FileShare.None, 65536, true))
                 {
                     // 1. Write initialization segment
                     await DownloadSegmentWithRetryAsync(resolved.DashInitUrl, fileStream, cancellationToken).ConfigureAwait(false);
@@ -647,12 +678,25 @@ public class MonochromeApiClient
             {
                 // Direct file download
                 _logger.LogInformation("Downloading direct stream for track {TrackId}...", trackId);
-                using var fileStream = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None, 65536, true);
-                await DownloadSegmentWithRetryAsync(resolved.Url, fileStream, cancellationToken).ConfigureAwait(false);
+                using (var fileStream = new FileStream(tempRawFile, FileMode.Create, FileAccess.Write, FileShare.None, 65536, true))
+                {
+                    await DownloadSegmentWithRetryAsync(resolved.Url, fileStream, cancellationToken).ConfigureAwait(false);
+                }
             }
 
-            File.Move(tempFile, targetFile, true);
-            _logger.LogInformation("Track {TrackId} successfully cached at {Path} ({Bytes} bytes)", trackId, targetFile, new FileInfo(targetFile).Length);
+            // Remux raw DASH fMP4 container to native FLAC / M4A using FFmpeg so HTML5 <audio> can direct-play it
+            bool remuxed = await RemuxToNativeAudioAsync(tempRawFile, targetFile, targetExt, cancellationToken).ConfigureAwait(false);
+            if (remuxed && File.Exists(targetFile))
+            {
+                try { File.Delete(tempRawFile); } catch { }
+            }
+            else
+            {
+                // Fallback: move raw file directly
+                File.Move(tempRawFile, targetFile, true);
+            }
+
+            _logger.LogInformation("Track {TrackId} successfully cached as {TargetExt} at {Path} ({Bytes} bytes)", trackId, targetExt, targetFile, new FileInfo(targetFile).Length);
 
             // Clean older cached tracks in background if cache exceeds limit
             _ = Task.Run(() => CleanCacheIfNecessary(cacheDir));
@@ -663,6 +707,77 @@ public class MonochromeApiClient
         {
             trackLock.Release();
         }
+    }
+
+    /// <summary>
+    /// Remuxes an audio container (e.g. fragmented MP4) to a standard native audio file (.flac or .m4a) using FFmpeg.
+    /// </summary>
+    public async Task<bool> RemuxToNativeAudioAsync(string inputFile, string outputFile, string targetFormat, CancellationToken cancellationToken = default)
+    {
+        var ffmpeg = ResolveFfmpegPath();
+        var tempOut = outputFile + $".remux.{Guid.NewGuid():N}";
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = ffmpeg,
+                Arguments = $"-y -i \"{inputFile}\" -c copy \"{tempOut}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var proc = Process.Start(psi);
+            if (proc == null)
+            {
+                return false;
+            }
+
+            await proc.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            if (proc.ExitCode == 0 && File.Exists(tempOut) && new FileInfo(tempOut).Length > 1024)
+            {
+                File.Move(tempOut, outputFile, true);
+                _logger.LogInformation("Remuxed {Input} to native {Ext} via {Ffmpeg} ({Bytes} bytes)", Path.GetFileName(inputFile), targetFormat, ffmpeg, new FileInfo(outputFile).Length);
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Remuxing to native {Ext} via {Ffmpeg} failed", targetFormat, ffmpeg);
+        }
+        finally
+        {
+            try { if (File.Exists(tempOut)) File.Delete(tempOut); } catch { }
+        }
+
+        return false;
+    }
+
+    private string ResolveFfmpegPath()
+    {
+        if (!string.IsNullOrEmpty(_mediaEncoder?.EncoderPath) && File.Exists(_mediaEncoder.EncoderPath))
+        {
+            return _mediaEncoder.EncoderPath;
+        }
+
+        var candidates = new[]
+        {
+            "/usr/lib/jellyfin-ffmpeg/ffmpeg",
+            "/usr/bin/ffmpeg",
+            "/usr/local/bin/ffmpeg",
+            "ffmpeg"
+        };
+
+        foreach (var c in candidates)
+        {
+            if (File.Exists(c))
+            {
+                return c;
+            }
+        }
+
+        return "ffmpeg";
     }
 
     private async Task DownloadSegmentWithRetryAsync(string url, Stream destination, CancellationToken cancellationToken, int maxRetries = 3)
