@@ -1,0 +1,20 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+dist/Jellyfin.Plugin.Monochrome_1.0.0.0/
+
+# Keep manifest and zip for Jellyfin repository hosting
+!dist/manifest.json
+!dist/*.zip
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+*.userprefs
+.vs/
+.idea/
+.vscode/
+
+# Logs
+*.log

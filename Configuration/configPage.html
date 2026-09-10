@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Monochrome Music Configuration</title>
+</head>
+<body>
+    <div id="MonochromeConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <h1>Monochrome Music Settings</h1>
+                <p class="fieldDescription">
+                    Configure your Monochrome Music streaming and TIDAL HiFi integration for Jellyfin 12.0.
+                </p>
+
+                <form id="MonochromeConfigForm">
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ApiBaseUrl">Monochrome / HiFi Instance URL:</label>
+                        <input is="emby-input" type="text" id="ApiBaseUrl" name="ApiBaseUrl" required />
+                        <div class="fieldDescription">Base URL for Monochrome API (e.g. <code>https://monochrome.tf</code>, <code>https://hifi.geeked.wtf</code>, or your own self-hosted worker).</div>
+                    </div>
+
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="AudioQuality">Preferred Audio Quality:</label>
+                        <select is="emby-select" id="AudioQuality" name="AudioQuality">
+                            <option value="HI_RES_LOSSLESS">Hi-Res Lossless (FLAC up to 24-bit / 192 kHz)</option>
+                            <option value="LOSSLESS">Lossless CD Quality (FLAC 16-bit / 44.1 kHz)</option>
+                            <option value="HIGH">High (AAC 320 kbps)</option>
+                            <option value="LOW">Low (AAC 96 kbps - Data Saver)</option>
+                        </select>
+                        <div class="fieldDescription">Audio stream quality when playing tracks in Jellyfin.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CountryCode">Catalogue Country Code:</label>
+                        <input is="emby-input" type="text" id="CountryCode" name="CountryCode" maxlength="2" placeholder="IT" style="text-transform: uppercase;" />
+                        <div class="fieldDescription">Two-letter ISO country code for music catalogue availability (e.g. IT, US, GB, DE).</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input is="emby-checkbox" type="checkbox" id="UseDirectTidalApi" name="UseDirectTidalApi" />
+                            <span class="checkboxLabel">Use Direct TIDAL API Connection</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Enables direct high-speed catalog querying and token generation via TIDAL OAuth/Client Credentials.
+                        </div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CustomToken">Custom Access / OAuth Token (Optional):</label>
+                        <input is="emby-input" type="password" id="CustomToken" name="CustomToken" placeholder="Leave empty for automatic credentials" />
+                        <div class="fieldDescription">Specify a personal HiFi or TIDAL token if you wish to override automatic authentication.</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input is="emby-checkbox" type="checkbox" id="EnableChannel" name="EnableChannel" />
+                            <span class="checkboxLabel">Enable Jellyfin Music Channel</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Shows "Monochrome Music" in the Jellyfin Channels section for browsing top tracks, albums, and searching.
+                        </div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input is="emby-checkbox" type="checkbox" id="EnableStreamProxy" name="EnableStreamProxy" />
+                            <span class="checkboxLabel">Proxy Streams Through Jellyfin Server</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            When enabled, audio data flows through Jellyfin rather than redirecting clients directly to the CDN (useful if clients are behind restrictive firewalls).
+                        </div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="StrmLibraryPath">STRM Export Directory (Optional):</label>
+                        <input is="emby-input" type="text" id="StrmLibraryPath" name="StrmLibraryPath" placeholder="/var/lib/jellyfin/media/Music" />
+                        <div class="fieldDescription">Filesystem path to your Jellyfin Music library where albums can be exported as .strm files.</div>
+                    </div>
+
+                    <div style="margin: 2em 0 1em;">
+                        <button is="emby-button" type="button" id="TestConnectionBtn" class="raised button-accent block">
+                            <span>Test Connection</span>
+                        </button>
+                        <div id="TestConnectionResult" style="margin-top: 10px; font-weight: bold;"></div>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <script type="text/javascript">
+            const MonochromeConfig = {
+                pluginUniqueId: '0a9d15e2-6bf3-4674-8b1b-7a329d7831d1'
+            };
+
+            document.querySelector('#MonochromeConfigPage').addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+
+                ApiClient.getPluginConfiguration(MonochromeConfig.pluginUniqueId).then(function (config) {
+                    document.querySelector('#ApiBaseUrl').value = config.ApiBaseUrl || 'https://monochrome.tf';
+                    document.querySelector('#AudioQuality').value = config.AudioQuality || 'LOSSLESS';
+                    document.querySelector('#CountryCode').value = config.CountryCode || 'IT';
+                    document.querySelector('#UseDirectTidalApi').checked = config.UseDirectTidalApi !== false;
+                    document.querySelector('#CustomToken').value = config.CustomToken || '';
+                    document.querySelector('#EnableChannel').checked = config.EnableChannel !== false;
+                    document.querySelector('#EnableStreamProxy').checked = config.EnableStreamProxy === true;
+                    document.querySelector('#StrmLibraryPath').value = config.StrmLibraryPath || '';
+
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+
+            document.querySelector('#TestConnectionBtn').addEventListener('click', function () {
+                const resultDiv = document.querySelector('#TestConnectionResult');
+                resultDiv.style.color = '#388e3c';
+                resultDiv.innerText = 'Testing connection to Monochrome / TIDAL...';
+
+                ApiClient.fetch({
+                    url: ApiClient.getUrl('Monochrome/TestConnection'),
+                    type: 'GET'
+                }).then(function (response) {
+                    return response.json();
+                }).then(function (data) {
+                    if (data && data.success) {
+                        resultDiv.style.color = '#4caf50';
+                        resultDiv.innerText = '✓ Connection successful! ' + (data.message || '');
+                    } else {
+                        resultDiv.style.color = '#f44336';
+                        resultDiv.innerText = '✗ Connection failed: ' + (data?.message || 'Unknown error');
+                    }
+                }).catch(function (err) {
+                    resultDiv.style.color = '#f44336';
+                    resultDiv.innerText = '✗ Test failed: ' + (err.message || err);
+                });
+            });
+
+            document.querySelector('#MonochromeConfigForm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                Dashboard.showLoadingMsg();
+
+                ApiClient.getPluginConfiguration(MonochromeConfig.pluginUniqueId).then(function (config) {
+                    config.ApiBaseUrl = document.querySelector('#ApiBaseUrl').value;
+                    config.AudioQuality = document.querySelector('#AudioQuality').value;
+                    config.CountryCode = (document.querySelector('#CountryCode').value || 'IT').toUpperCase();
+                    config.UseDirectTidalApi = document.querySelector('#UseDirectTidalApi').checked;
+                    config.CustomToken = document.querySelector('#CustomToken').value;
+                    config.EnableChannel = document.querySelector('#EnableChannel').checked;
+                    config.EnableStreamProxy = document.querySelector('#EnableStreamProxy').checked;
+                    config.StrmLibraryPath = document.querySelector('#StrmLibraryPath').value;
+
+                    ApiClient.updatePluginConfiguration(MonochromeConfig.pluginUniqueId, config).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    });
+                });
+
+                return false;
+            });
+        </script>
+    </div>
+</body>
+</html>

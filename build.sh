@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Detect dotnet binary
+if command -v dotnet >/dev/null 2>&1; then
+    DOTNET_BIN="dotnet"
+elif [ -f "$HOME/.dotnet/dotnet" ]; then
+    DOTNET_BIN="$HOME/.dotnet/dotnet"
+else
+    echo "Error: dotnet SDK not found in PATH or ~/.dotnet/dotnet"
+    exit 1
+fi
+
+echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
+"$DOTNET_BIN" build -c Release
+
+OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
+DIST_DIR="$SCRIPT_DIR/dist"
+PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
+VERSION="1.0.0.0"
+PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
+
+rm -rf "$DIST_DIR"
+mkdir -p "$PACKAGE_DIR"
+
+echo "=== Packaging plugin into $PACKAGE_DIR ==="
+cp "$OUTPUT_DIR/${PLUGIN_NAME}.dll" "$PACKAGE_DIR/"
+cp "$OUTPUT_DIR/${PLUGIN_NAME}.pdb" "$PACKAGE_DIR/"
+cp "$OUTPUT_DIR/${PLUGIN_NAME}.deps.json" "$PACKAGE_DIR/"
+
+# Create zip archive for distribution
+cd "$DIST_DIR"
+zip -r "${PLUGIN_NAME}_${VERSION}.zip" "${PLUGIN_NAME}_${VERSION}" >/dev/null
+
+# Generate SHA256 and MD5 checksums
+SHA256_CHECKSUM=$(sha256sum "${PLUGIN_NAME}_${VERSION}.zip" | awk '{print $1}')
+MD5_CHECKSUM=$(md5sum "${PLUGIN_NAME}_${VERSION}.zip" | awk '{print $1}')
+
+# Create Jellyfin repository manifest
+cat <<EOF > "$DIST_DIR/manifest.json"
+[
+  {
+    "guid": "0a9d15e2-6bf3-4674-8b1b-7a329d7831d1",
+    "name": "Monochrome Music",
+    "description": "Stream and browse lossless Hi-Res music from Monochrome and TIDAL in Jellyfin 12.0.",
+    "overview": "Monochrome Music provider and channel for Jellyfin 12.0",
+    "owner": "nzo66",
+    "category": "Live TV & Channels / Music",
+    "versions": [
+      {
+        "version": "${VERSION}",
+        "changelog": "Initial release for Jellyfin 12.0 (.NET 10). Supports native Channel browsing, direct FLAC/Lossless streaming, STRM export, and REST API controller.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/nzo66/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_${VERSION}.zip",
+        "checksum": "${MD5_CHECKSUM}",
+        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      }
+    ]
+  }
+]
+EOF
+
+cp "$DIST_DIR/manifest.json" "$SCRIPT_DIR/manifest.json"
+
+echo ""
+echo "=== Build and packaging completed successfully! ==="
+echo "Plugin folder: $PACKAGE_DIR"
+echo "Plugin archive: $DIST_DIR/${PLUGIN_NAME}_${VERSION}.zip"
+echo "SHA256: $SHA256_CHECKSUM"
+echo "Manifest: $DIST_DIR/manifest.json"
