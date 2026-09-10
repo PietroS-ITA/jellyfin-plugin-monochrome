@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    console.log('[Monochrome] Apple Music Karaoke & Lyrics client v1.3.9.1 loaded.');
+    console.log('[Monochrome] Apple Music Karaoke & Lyrics client v1.3.9.2 loaded.');
 
     let currentLyrics = null;
     let currentLoadedKey = null;

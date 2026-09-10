@@ -468,6 +468,19 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
         var container = isFlac ? "flac" : (isM4a ? "m4a" : "flac");
         var codec = isFlac ? "flac" : "aac";
 
+        var lrcFile = Path.ChangeExtension(localFile, ".lrc");
+        if (!File.Exists(lrcFile))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _apiClient.GetTrackLyricsAsync(trackId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                }
+                catch { }
+            });
+        }
+
         var mediaSource = new MediaSourceInfo
         {
             Id = id,
@@ -486,6 +499,14 @@ public class MonochromeChannel : IChannel, IRequiresMediaInfoCallback, ISupports
                     Index = 0,
                     IsDefault = true,
                     Codec = codec
+                },
+                new MediaStream
+                {
+                    Type = MediaStreamType.Lyric,
+                    Index = 1,
+                    IsDefault = true,
+                    Codec = "lrc",
+                    Path = lrcFile
                 }
             }
         };

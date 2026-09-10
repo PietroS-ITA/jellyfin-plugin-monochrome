@@ -83,21 +83,43 @@ public class MonochromeMediaSourceProvider : IMediaSourceProvider
                 }
             }
 
+            var lrcFile = Path.ChangeExtension(localFile, ".lrc");
+            // If the .lrc file does not exist yet, fetch it so native lyrics are ready
+            if (!File.Exists(lrcFile))
+            {
+                try
+                {
+                    await _apiClient.GetTrackLyricsAsync(trackId, item.Name, (item as Audio)?.Artists?.FirstOrDefault(), cancellationToken).ConfigureAwait(false);
+                }
+                catch { }
+            }
+
+            var streams = new List<MediaStream>
+            {
+                new MediaStream
+                {
+                    Type = MediaStreamType.Audio,
+                    Codec = codec,
+                    Index = 0,
+                    IsDefault = true,
+                    Channels = 2,
+                    SampleRate = 44100
+                },
+                new MediaStream
+                {
+                    Type = MediaStreamType.Lyric,
+                    Codec = "lrc",
+                    Path = lrcFile,
+                    Index = 1,
+                    IsDefault = true
+                }
+            };
+
             // Ensure media stream is saved in SQLite database so GetOptimalAudioStream never throws
+            // and HasLyrics is true
             try
             {
-                _mediaStreamRepository.SaveMediaStreams(item.Id,
-                [
-                    new MediaStream
-                    {
-                        Type = MediaStreamType.Audio,
-                        Codec = codec,
-                        Index = 0,
-                        IsDefault = true,
-                        Channels = 2,
-                        SampleRate = 44100
-                    }
-                ], cancellationToken);
+                _mediaStreamRepository.SaveMediaStreams(item.Id, streams, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -118,18 +140,7 @@ public class MonochromeMediaSourceProvider : IMediaSourceProvider
                 IsRemote = false,
                 RequiresOpening = false,
                 RequiresClosing = false,
-                MediaStreams =
-                [
-                    new MediaStream
-                    {
-                        Type = MediaStreamType.Audio,
-                        Codec = codec,
-                        Index = 0,
-                        IsDefault = true,
-                        Channels = 2,
-                        SampleRate = 44100
-                    }
-                ]
+                MediaStreams = streams
             };
 
             return [mediaSource];

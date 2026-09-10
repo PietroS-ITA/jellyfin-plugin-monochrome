@@ -51,12 +51,20 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.3.9.2",
+        "changelog": "1) Risolto definitivamente il problema del tasto Stop: azzeramento immediato e totale di tutte le code radio su stop manuale e prevenzione autoplay se il brano e interrotto prima della fine fisica reale (entro 2.5s). 2) Supporto nativo integrato ai Testi (MediaStreamType.Lyric e generazione file .lrc): Jellyfin ora mostra il pulsante testi sincronizzati nativo su Web, Mobile, Android, iOS e Desktop senza bisogno di plugin esterni. 3) Supporto e auto-registrazione dinamica con il plugin 'JavaScript Injector' per UI Apple Music e pillola flottante.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.2.zip",
+        "checksum": "${MD5_CHECKSUM}",
+        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
         "version": "1.3.9.1",
         "changelog": "Risolto definitivamente posizionamento pulsante Testi nella barra (inserito nei controlli centrali, controlli utente a destra, pagina schermo intero e dock pill galleggiante); ricerca testi ultra-resiliente multi-sorgente con fallback su titolo e artista; fix totale del tasto Stop (rimossa propagazione client-queue e cancellazione istantanea coda server su stop).",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.1.zip",
-        "checksum": "${MD5_CHECKSUM}",
-        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        "checksum": "a1077ca4d5527d28328a1afa01e75fa6",
+        "timestamp": "2026-09-10T22:20:24Z"
       },
       {
         "version": "1.3.9.0",

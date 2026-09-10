@@ -598,6 +598,7 @@ public class MonochromeController : ControllerBase
     /// Serves the Apple Music style karaoke script for Jellyfin Web.
     /// </summary>
     [HttpGet("karaoke.js")]
+    [HttpHead("karaoke.js")]
     public IActionResult GetKaraokeJs()
     {
         var asm = typeof(MonochromeController).Assembly;
@@ -622,6 +623,7 @@ public class MonochromeController : ControllerBase
     /// Serves the Apple Music style karaoke styles for Jellyfin Web.
     /// </summary>
     [HttpGet("karaoke.css")]
+    [HttpHead("karaoke.css")]
     public IActionResult GetKaraokeCss()
     {
         var asm = typeof(MonochromeController).Assembly;

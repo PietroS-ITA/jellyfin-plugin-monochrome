@@ -587,9 +587,15 @@ public class MonochromeApiClient
 
     /// <summary>
     /// Ensures that the audio track is downloaded and cached locally as a complete, playable audio file on the Jellyfin server.
+    /// </summary>
+    public Task<string> EnsureTrackCachedAsync(long trackId, CancellationToken cancellationToken)
+        => EnsureTrackCachedAsync(trackId, null, null, cancellationToken);
+
+    /// <summary>
+    /// Ensures that the audio track is downloaded and cached locally as a complete, playable audio file on the Jellyfin server.
     /// Returns the absolute path to the local audio file (.flac or .m4a).
     /// </summary>
-    public async Task<string> EnsureTrackCachedAsync(long trackId, CancellationToken cancellationToken = default)
+    public async Task<string> EnsureTrackCachedAsync(long trackId, string? title = null, string? artist = null, CancellationToken cancellationToken = default)
     {
         var cacheDir = Path.Combine(_applicationPaths.CachePath, "monochrome");
         Directory.CreateDirectory(cacheDir);
@@ -597,6 +603,18 @@ public class MonochromeApiClient
         var flacFile = Path.Combine(cacheDir, $"{trackId}.flac");
         var m4aFile = Path.Combine(cacheDir, $"{trackId}.m4a");
         var legacyMp4File = Path.Combine(cacheDir, $"{trackId}.mp4");
+        var lrcFile = Path.Combine(cacheDir, $"{trackId}.lrc");
+
+        void EnsureLyricsFetchedInBackground()
+        {
+            if (!File.Exists(lrcFile))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try { await GetTrackLyricsAsync(trackId, title, artist, cancellationToken: CancellationToken.None).ConfigureAwait(false); } catch { }
+                });
+            }
+        }
 
         // 1. Check if already cached as native FLAC (> 4MB)
         if (File.Exists(flacFile))
@@ -604,6 +622,7 @@ public class MonochromeApiClient
             var len = new FileInfo(flacFile).Length;
             if (len > 4L * 1024L * 1024L)
             {
+                EnsureLyricsFetchedInBackground();
                 return flacFile;
             }
 
@@ -617,6 +636,7 @@ public class MonochromeApiClient
             var len = new FileInfo(m4aFile).Length;
             if (len > 2L * 1024L * 1024L)
             {
+                EnsureLyricsFetchedInBackground();
                 return m4aFile;
             }
 
@@ -713,7 +733,7 @@ public class MonochromeApiClient
             {
                 try
                 {
-                    await GetTrackLyricsAsync(trackId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    await GetTrackLyricsAsync(trackId, title, artist, cancellationToken: CancellationToken.None).ConfigureAwait(false);
                 }
                 catch { }
             });

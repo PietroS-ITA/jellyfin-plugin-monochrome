@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Monochrome.Api;
@@ -61,6 +62,15 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "RepairDatabaseAsync top-level exception");
+        }
+
+        try
+        {
+            RegisterWithJavaScriptInjector();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "JavaScript Injector registration encountered an issue");
         }
 
         try
@@ -397,14 +407,6 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
         }
 
         var sessionId = e.Session.Id;
-        List<Guid>? queue = null;
-        if (!_sessionRadioQueues.TryGetValue(sessionId, out queue) || queue.Count == 0)
-        {
-            if (e.Session.UserId == Guid.Empty || !_userRadioQueues.TryGetValue(e.Session.UserId, out queue) || queue.Count == 0)
-            {
-                return;
-            }
-        }
 
         // Check if the stopped item was a Monochrome track
         bool isMonochrome = (audio.Path != null && audio.Path.Contains("monochrome"))
@@ -416,20 +418,60 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
             return;
         }
 
-        // CRITICAL: If playback was stopped before completion, the user pressed STOP (or paused/navigated).
-        // Under no circumstances should autoplay radio trigger another song when Stopped before completion!
-        if (!e.PlayedToCompletion)
+        // Check if the track reached true physical completion (within 2.5s of the end of the song).
+        // In Jellyfin, PlayedToCompletion is marked true when position >= 90%, so an explicit STOP
+        // anywhere between 90% and the end would otherwise falsely trigger autoplay!
+        bool naturalCompletion = false;
+        if (e.PlayedToCompletion && audio.RunTimeTicks.HasValue && audio.RunTimeTicks.Value > 0)
         {
-            _logger.LogInformation("Monochrome Autoplay: Track '{Title}' was stopped before completion. Not advancing autoplay radio.", audio.Name);
+            if (e.PlaybackPositionTicks.HasValue && e.PlaybackPositionTicks.Value > 0)
+            {
+                var diffTicks = audio.RunTimeTicks.Value - e.PlaybackPositionTicks.Value;
+                if (diffTicks <= TimeSpan.FromSeconds(2.5).Ticks && diffTicks >= -TimeSpan.FromSeconds(5.0).Ticks)
+                {
+                    naturalCompletion = true;
+                }
+            }
+        }
+
+        // If it was NOT a natural track completion (user clicked STOP, paused, or skipped early):
+        // ALWAYS and IMMEDIATELY clear the radio queue so nothing will ever autoplay!
+        if (!naturalCompletion)
+        {
+            _logger.LogInformation("Monochrome Autoplay: Track '{Title}' stopped before true completion (pos: {Pos}ms, runtime: {Run}ms). Clearing radio queue.",
+                audio.Name,
+                e.PlaybackPositionTicks.HasValue ? e.PlaybackPositionTicks.Value / 10000 : 0,
+                audio.RunTimeTicks.HasValue ? audio.RunTimeTicks.Value / 10000 : 0);
+
+            ClearRadioQueue(sessionId, e.Session.UserId);
             return;
+        }
+
+        // If the session has multiple items in its native queue (e.g. user is playing an Album or Playlist):
+        // Yield to Jellyfin's native queue playback!
+        if (e.Session.NowPlayingQueue != null && e.Session.NowPlayingQueue.Count > 1)
+        {
+            _logger.LogInformation("Monochrome Autoplay: Session has {Count} items in native queue. Yielding to native playlist.", e.Session.NowPlayingQueue.Count);
+            ClearRadioQueue(sessionId, e.Session.UserId);
+            return;
+        }
+
+        // Retrieve queued radio tracks
+        List<Guid>? queue = null;
+        if (!_sessionRadioQueues.TryGetValue(sessionId, out queue) || queue.Count == 0)
+        {
+            if (e.Session.UserId == Guid.Empty || !_userRadioQueues.TryGetValue(e.Session.UserId, out queue) || queue.Count == 0)
+            {
+                return;
+            }
         }
 
         _ = Task.Run(async () =>
         {
             try
             {
-                // Brief pause to check if the client already advanced automatically
-                await Task.Delay(800).ConfigureAwait(false);
+                // Brief pause to ensure client didn't immediately start something else or user didn't stop
+                await Task.Delay(1000).ConfigureAwait(false);
 
                 var activeSession = _sessionManager.Sessions.FirstOrDefault(s => s.Id == sessionId);
                 if (activeSession == null)
@@ -454,7 +496,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                     queue.RemoveAt(0);
                 }
 
-                _logger.LogInformation("Autoplay Radio: Client finished '{Title}'. Automatically triggering next track {NextId} on session {SessionId}...", audio.Name, nextTrackGuid, sessionId);
+                _logger.LogInformation("Autoplay Radio: Track '{Title}' reached natural completion. Advancing to radio track {NextId} on session {SessionId}...", audio.Name, nextTrackGuid, sessionId);
 
                 if (activeSession.Capabilities != null)
                 {
@@ -538,9 +580,18 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
 
     /// <summary>
     /// Clears the radio autoplay queue for a session and/or user.
+    /// If both sessionId and userId are null or empty, clears all active queues.
     /// </summary>
-    public void ClearRadioQueue(string? sessionId, Guid? userId)
+    public void ClearRadioQueue(string? sessionId = null, Guid? userId = null)
     {
+        if (string.IsNullOrEmpty(sessionId) && (!userId.HasValue || userId.Value == Guid.Empty))
+        {
+            _sessionRadioQueues.Clear();
+            _userRadioQueues.Clear();
+            _logger.LogInformation("Autoplay Radio: Cleared all radio queues across all sessions.");
+            return;
+        }
+
         if (!string.IsNullOrEmpty(sessionId) && _sessionRadioQueues.TryGetValue(sessionId, out var sQueue))
         {
             lock (sQueue)
@@ -562,6 +613,55 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
         _logger.LogInformation("Autoplay Radio: Cleared queue for session '{SessionId}', user '{UserId}'", sessionId, userId);
     }
 
+    private void RegisterWithJavaScriptInjector()
+    {
+        try
+        {
+            var injectorAsm = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(a => a.GetName().Name?.Equals("Jellyfin.Plugin.JavaScriptInjector", StringComparison.OrdinalIgnoreCase) == true);
+
+            if (injectorAsm == null)
+            {
+                return;
+            }
+
+            var pluginInterfaceType = injectorAsm.GetType("Jellyfin.Plugin.JavaScriptInjector.PluginInterface");
+            if (pluginInterfaceType == null)
+            {
+                return;
+            }
+
+            var registerMethod = pluginInterfaceType.GetMethod("RegisterScript", BindingFlags.Public | BindingFlags.Static);
+            if (registerMethod == null)
+            {
+                return;
+            }
+
+            var jObjectType = Type.GetType("Newtonsoft.Json.Linq.JObject, Newtonsoft.Json");
+            if (jObjectType == null)
+            {
+                return;
+            }
+
+            dynamic payload = Activator.CreateInstance(jObjectType)!;
+            payload["id"] = "monochrome-karaoke-ui";
+            payload["name"] = "Monochrome Apple Music Karaoke & Lyrics";
+            payload["script"] = "(function(){if(!document.getElementById('monochrome-karaoke-loader')){var s=document.createElement('script');s.id='monochrome-karaoke-loader';s.src='/Monochrome/karaoke.js';s.defer=true;document.body.appendChild(s);var l=document.createElement('link');l.rel='stylesheet';l.href='/Monochrome/karaoke.css';document.head.appendChild(l);}})();";
+            payload["enabled"] = true;
+            payload["requiresAuthentication"] = false;
+            payload["pluginId"] = Plugin.Instance?.Id.ToString() ?? Guid.Empty.ToString();
+            payload["pluginName"] = "Monochrome";
+            payload["pluginVersion"] = Plugin.Instance?.Version.ToString() ?? "1.3.9.2";
+
+            registerMethod.Invoke(null, new object[] { payload });
+            _logger.LogInformation("Monochrome Web: Programmatically registered Karaoke UI with JavaScript Injector plugin.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Monochrome Web: Could not register script with JavaScript Injector.");
+        }
+    }
+
     private void InjectWebClientScript()
     {
         var candidatePaths = new List<string>();
@@ -576,6 +676,12 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
 
         candidatePaths.Add("/jellyfin/jellyfin-web/index.html");
         candidatePaths.Add("/usr/share/jellyfin/web/index.html");
+        candidatePaths.Add("/usr/lib/jellyfin/web/index.html");
+        candidatePaths.Add("/usr/lib/jellyfin/bin/jellyfin-web/index.html");
+        candidatePaths.Add("/var/lib/jellyfin/web/index.html");
+        candidatePaths.Add("/app/jellyfin/jellyfin-web/index.html");
+        candidatePaths.Add("/jellyfin-web/index.html");
+        candidatePaths.Add(Path.Combine(AppContext.BaseDirectory, "jellyfin-web", "index.html"));
 
         var indexPath = candidatePaths.FirstOrDefault(File.Exists);
         if (string.IsNullOrEmpty(indexPath))
@@ -617,6 +723,10 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                 File.WriteAllText(indexPath, content);
                 _logger.LogInformation("Monochrome Web: Successfully injected Karaoke UI into {Path}", indexPath);
             }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _logger.LogWarning("Monochrome Web: index.html found at '{Path}' but is read-only (permission denied). Install 'JavaScript Injector' plugin from the Jellyfin Catalog or configure Custom CSS.", indexPath);
         }
         catch (Exception ex)
         {

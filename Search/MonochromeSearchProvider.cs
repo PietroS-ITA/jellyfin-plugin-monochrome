@@ -387,8 +387,14 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
     {
         try
         {
-            _mediaStreamRepository.SaveMediaStreams(trackGuid,
-            [
+            var audio = _libraryManager.GetItemById(trackGuid) as Audio;
+            var trackIdStr = audio?.GetProviderId("TidalTrack") ?? audio?.GetProviderId("MonochromeTrack");
+            var lrcFile = !string.IsNullOrEmpty(trackIdStr)
+                ? Path.Combine(_applicationPaths.CachePath, "monochrome", $"{trackIdStr}.lrc")
+                : null;
+
+            var streams = new List<MediaStream>
+            {
                 new MediaStream
                 {
                     Type = MediaStreamType.Audio,
@@ -397,8 +403,18 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                     IsDefault = true,
                     Channels = 2,
                     SampleRate = 44100
+                },
+                new MediaStream
+                {
+                    Type = MediaStreamType.Lyric,
+                    Codec = "lrc",
+                    Path = lrcFile ?? string.Empty,
+                    Index = 1,
+                    IsDefault = true
                 }
-            ], cancellationToken);
+            };
+
+            _mediaStreamRepository.SaveMediaStreams(trackGuid, streams, cancellationToken);
         }
         catch (Exception ex)
         {
