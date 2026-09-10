@@ -12,10 +12,10 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public PluginConfiguration()
     {
-        ApiBaseUrl = "https://monochrome.tf";
+        ApiBaseUrl = "https://hifi-api-workers.orbmusic.workers.dev";
         AudioQuality = "LOSSLESS"; // LOSSLESS, HI_RES_LOSSLESS, HIGH, LOW
         CountryCode = "IT";
-        UseDirectTidalApi = true;
+        UseDirectTidalApi = false;
         CustomToken = string.Empty;
         EnableChannel = false;
         EnableStreamProxy = false;

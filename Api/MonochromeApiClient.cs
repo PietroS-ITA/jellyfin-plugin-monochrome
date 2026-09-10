@@ -52,7 +52,7 @@ public class MonochromeApiClient
 
         if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
         {
-            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (X11; Linux x86_64) Jellyfin-Monochrome/1.0");
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
         }
     }
 
@@ -347,42 +347,61 @@ public class MonochromeApiClient
     {
         var quality = qualityOverride ?? Config.AudioQuality ?? "LOSSLESS";
 
-        // Try Monochrome / HiFi instance if specified and not empty
-        if (!string.IsNullOrWhiteSpace(Config.ApiBaseUrl) && !Config.UseDirectTidalApi)
+        // Candidate HiFi / Monochrome instances (full stream resolvers)
+        var candidateEndpoints = new List<string>();
+        if (!string.IsNullOrWhiteSpace(Config.ApiBaseUrl))
         {
-            try
-            {
-                var hifiUrl = $"{Config.ApiBaseUrl.TrimEnd('/')}/track?id={trackId}&quality={quality}";
-                using var hifiReq = new HttpRequestMessage(HttpMethod.Get, hifiUrl);
-                using var hifiRes = await _httpClient.SendAsync(hifiReq, cancellationToken).ConfigureAwait(false);
-                if (hifiRes.IsSuccessStatusCode)
-                {
-                    var hifiJson = await hifiRes.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                    using var doc = JsonDocument.Parse(hifiJson);
-                    JsonElement dataElem = doc.RootElement;
-                    if (doc.RootElement.TryGetProperty("data", out var subData))
-                    {
-                        dataElem = subData;
-                    }
+            candidateEndpoints.Add(Config.ApiBaseUrl.TrimEnd('/'));
+        }
 
-                    var playback = JsonSerializer.Deserialize<TidalPlaybackInfo>(dataElem.GetRawText());
-                    if (playback != null && !string.IsNullOrEmpty(playback.Manifest))
+        const string FallbackInstance = "https://hifi-api-workers.orbmusic.workers.dev";
+        if (!candidateEndpoints.Contains(FallbackInstance, StringComparer.OrdinalIgnoreCase))
+        {
+            candidateEndpoints.Add(FallbackInstance);
+        }
+
+        // 1. Try HiFi / Monochrome instances first (gives full lossless FLAC/AAC streams)
+        if (!Config.UseDirectTidalApi || string.IsNullOrWhiteSpace(Config.CustomToken))
+        {
+            foreach (var baseUrl in candidateEndpoints)
+            {
+                try
+                {
+                    var hifiUrl = $"{baseUrl}/track?id={trackId}&quality={quality}";
+                    using var hifiReq = new HttpRequestMessage(HttpMethod.Get, hifiUrl);
+                    hifiReq.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+                    using var hifiRes = await _httpClient.SendAsync(hifiReq, cancellationToken).ConfigureAwait(false);
+                    if (hifiRes.IsSuccessStatusCode)
                     {
-                        var stream = ParseManifest(playback);
-                        if (stream != null)
+                        var hifiJson = await hifiRes.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                        using var doc = JsonDocument.Parse(hifiJson);
+                        JsonElement dataElem = doc.RootElement;
+                        if (doc.RootElement.TryGetProperty("data", out var subData))
                         {
-                            return stream;
+                            dataElem = subData;
+                        }
+
+                        var playback = JsonSerializer.Deserialize<TidalPlaybackInfo>(dataElem.GetRawText());
+                        if (playback != null && !string.IsNullOrEmpty(playback.Manifest))
+                        {
+                            var stream = ParseManifest(playback);
+                            if (stream != null && (!stream.IsDash || stream.DashSegmentUrls.Count > 8))
+                            {
+                                _logger.LogInformation("Successfully resolved full audio stream for track {TrackId} via {Instance} ({Quality}, {Segments} segments)",
+                                    trackId, baseUrl, stream.Quality, stream.DashSegmentUrls.Count);
+                                return stream;
+                            }
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to resolve stream via Monochrome instance {Url}, falling back to direct API.", Config.ApiBaseUrl);
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to resolve stream via instance {Url}, trying next...", baseUrl);
+                }
             }
         }
 
-        // Direct TIDAL API playbackinfo resolution
+        // 2. Direct TIDAL API playbackinfo resolution (fallback or when explicitly configured)
         var token = await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
         var countryCode = string.IsNullOrWhiteSpace(Config.CountryCode) ? "IT" : Config.CountryCode.ToUpperInvariant();
         var pbUrl = $"{TidalApiBase}/tracks/{trackId}/playbackinfo?audioquality={quality}&playbackmode=STREAM&assetpresentation=FULL&countryCode={countryCode}";
@@ -569,9 +588,17 @@ public class MonochromeApiClient
         var cacheFile = Path.Combine(cacheDir, $"{trackId}.mp4");
         var flacFile = Path.Combine(cacheDir, $"{trackId}.flac");
 
-        if (File.Exists(cacheFile) && new FileInfo(cacheFile).Length > 1024)
+        // Validate existing cache: if smaller than 4MB, it may be an old 30s preview file that needs refreshing
+        if (File.Exists(cacheFile))
         {
-            return cacheFile;
+            var len = new FileInfo(cacheFile).Length;
+            if (len > 4L * 1024L * 1024L)
+            {
+                return cacheFile;
+            }
+
+            _logger.LogInformation("Cached file for track {TrackId} is small ({Bytes} bytes), deleting to re-cache full stream...", trackId, len);
+            try { File.Delete(cacheFile); } catch { }
         }
 
         if (File.Exists(flacFile) && new FileInfo(flacFile).Length > 1024)
@@ -583,7 +610,7 @@ public class MonochromeApiClient
         await trackLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (File.Exists(cacheFile) && new FileInfo(cacheFile).Length > 1024)
+            if (File.Exists(cacheFile) && new FileInfo(cacheFile).Length > 4L * 1024L * 1024L)
             {
                 return cacheFile;
             }
@@ -606,19 +633,13 @@ public class MonochromeApiClient
                 using (var fileStream = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None, 65536, true))
                 {
                     // 1. Write initialization segment
-                    using var initReq = new HttpRequestMessage(HttpMethod.Get, resolved.DashInitUrl);
-                    using var initRes = await _httpClient.SendAsync(initReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-                    initRes.EnsureSuccessStatusCode();
-                    await initRes.Content.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+                    await DownloadSegmentWithRetryAsync(resolved.DashInitUrl, fileStream, cancellationToken).ConfigureAwait(false);
 
                     // 2. Write media segments sequentially
                     foreach (var segUrl in resolved.DashSegmentUrls)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        using var segReq = new HttpRequestMessage(HttpMethod.Get, segUrl);
-                        using var segRes = await _httpClient.SendAsync(segReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-                        segRes.EnsureSuccessStatusCode();
-                        await segRes.Content.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+                        await DownloadSegmentWithRetryAsync(segUrl, fileStream, cancellationToken).ConfigureAwait(false);
                     }
                 }
             }
@@ -627,10 +648,7 @@ public class MonochromeApiClient
                 // Direct file download
                 _logger.LogInformation("Downloading direct stream for track {TrackId}...", trackId);
                 using var fileStream = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None, 65536, true);
-                using var streamReq = new HttpRequestMessage(HttpMethod.Get, resolved.Url);
-                using var streamRes = await _httpClient.SendAsync(streamReq, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-                streamRes.EnsureSuccessStatusCode();
-                await streamRes.Content.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+                await DownloadSegmentWithRetryAsync(resolved.Url, fileStream, cancellationToken).ConfigureAwait(false);
             }
 
             File.Move(tempFile, targetFile, true);
@@ -644,6 +662,27 @@ public class MonochromeApiClient
         finally
         {
             trackLock.Release();
+        }
+    }
+
+    private async Task DownloadSegmentWithRetryAsync(string url, Stream destination, CancellationToken cancellationToken, int maxRetries = 3)
+    {
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+                using var res = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                res.EnsureSuccessStatusCode();
+                await res.Content.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxRetries && !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogDebug(ex, "Transient error downloading media segment (attempt {Attempt}/{Max}), retrying...", attempt, maxRetries);
+                await Task.Delay(250 * attempt, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 

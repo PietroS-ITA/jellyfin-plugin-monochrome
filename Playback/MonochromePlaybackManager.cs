@@ -31,6 +31,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
     private readonly IApplicationPaths _applicationPaths;
     private readonly ILogger<MonochromePlaybackManager> _logger;
     private readonly ConcurrentDictionary<string, string> _lastQueuedRadioTrack = new();
+    private readonly ConcurrentDictionary<string, List<Guid>> _sessionRadioQueues = new();
 
     public MonochromePlaybackManager(
         ISessionManager sessionManager,
@@ -50,6 +51,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _sessionManager.PlaybackStart += OnPlaybackStart;
+        _sessionManager.PlaybackStopped += OnPlaybackStopped;
         _logger.LogInformation("Monochrome Autoplay Radio manager initialized.");
         try
         {
@@ -167,6 +169,27 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                     _logger.LogInformation("Monochrome DB Repair: Cleared redundant single-song Album name for {Count} tracks.", affected);
                 }
             }
+
+            // 5. Purge any short preview cache files (< 4MB) from previous versions
+            try
+            {
+                if (Directory.Exists(cacheDir))
+                {
+                    foreach (var file in Directory.GetFiles(cacheDir, "*.mp4"))
+                    {
+                        var fi = new FileInfo(file);
+                        if (fi.Length < 4L * 1024L * 1024L)
+                        {
+                            File.Delete(file);
+                            _logger.LogInformation("Monochrome DB Repair: Purged short preview cache file {File} ({Bytes} bytes)", file, fi.Length);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Monochrome DB Repair: Preview cache purge encountered an issue.");
+            }
         }
         catch (Exception ex)
         {
@@ -178,6 +201,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
     public Task StopAsync(CancellationToken cancellationToken)
     {
         _sessionManager.PlaybackStart -= OnPlaybackStart;
+        _sessionManager.PlaybackStopped -= OnPlaybackStopped;
         return Task.CompletedTask;
     }
 
@@ -188,8 +212,14 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
             return;
         }
 
-        // Only trigger autoplay if the session queue has at most 1 item (the single track played)
-        // If the user queued an album or playlist, do not interfere with their explicit queue!
+        // Enable media control capabilities on the session so remote play commands are accepted
+        if (e.Session.Capabilities != null)
+        {
+            e.Session.Capabilities.SupportsMediaControl = true;
+        }
+
+        // Only trigger autoplay radio if the session queue has at most 1 item (the single track played)
+        // If the user explicitly queued an album or playlist, do not interfere with their explicit queue!
         var queue = e.Session.NowPlayingQueue;
         if (queue != null && queue.Count > 1)
         {
@@ -248,7 +278,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
             try
             {
                 // Small delay to let the client player queue settle
-                await Task.Delay(1500).ConfigureAwait(false);
+                await Task.Delay(1200).ConfigureAwait(false);
 
                 _logger.LogInformation("Autoplay Radio: Fetching similar tracks for '{Title}' ({TrackId}) in session {SessionId}...", audio.Name, trackId, sessionId);
                 var radioTracks = await _apiClient.GetTrackRadioAsync(trackId, 15, CancellationToken.None).ConfigureAwait(false);
@@ -259,6 +289,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
 
                 var parentFolder = _searchProvider.GetMusicParentFolder(e.Session.UserId);
                 var queuedGuids = new List<Guid>();
+                var upcomingTracks = new List<TidalTrackItem>();
 
                 foreach (var rTrack in radioTracks)
                 {
@@ -272,18 +303,40 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                     if (item != null)
                     {
                         queuedGuids.Add(item.Id);
+                        upcomingTracks.Add(rTrack);
                     }
                 }
 
                 if (queuedGuids.Count > 0)
                 {
+                    // Store the upcoming radio queue in memory for this session
+                    _sessionRadioQueues[sessionId] = new List<Guid>(queuedGuids);
+
+                    // Pre-cache the first 2 upcoming radio tracks in the background so skip forward is instantaneous
+                    _ = Task.Run(async () =>
+                    {
+                        for (int i = 0; i < Math.Min(2, upcomingTracks.Count); i++)
+                        {
+                            try
+                            {
+                                await _apiClient.EnsureTrackCachedAsync(upcomingTracks[i].Id, CancellationToken.None).ConfigureAwait(false);
+                                _logger.LogDebug("Autoplay Radio: Pre-cached upcoming track '{Title}' ({TrackId})", upcomingTracks[i].Title, upcomingTracks[i].Id);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogDebug(ex, "Failed to pre-cache upcoming track {TrackId}", upcomingTracks[i].Id);
+                            }
+                        }
+                    });
+
+                    // Send PlayCommand.PlayLast to client player so client queue is populated
                     var playRequest = new PlayRequest
                     {
                         ItemIds = queuedGuids.ToArray(),
                         PlayCommand = PlayCommand.PlayLast
                     };
 
-                    await _sessionManager.SendPlayCommand(sessionId, sessionId, playRequest, CancellationToken.None).ConfigureAwait(false);
+                    await _sessionManager.SendPlayCommand(string.Empty, sessionId, playRequest, CancellationToken.None).ConfigureAwait(false);
                     _logger.LogInformation("Autoplay Radio: Enqueued {Count} similar tracks for '{Title}'", queuedGuids.Count, audio.Name);
                 }
             }
@@ -294,8 +347,84 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
         });
     }
 
+    private void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
+    {
+        if (e.Session == null || e.Item is not Audio audio)
+        {
+            return;
+        }
+
+        var sessionId = e.Session.Id;
+        if (!_sessionRadioQueues.TryGetValue(sessionId, out var queue) || queue.Count == 0)
+        {
+            return;
+        }
+
+        // Check if the stopped item was a Monochrome track
+        bool isMonochrome = (audio.Path != null && audio.Path.Contains("monochrome"))
+                            || (audio.ExternalId != null && audio.ExternalId.StartsWith("track_"))
+                            || (audio.ProviderIds != null && (audio.ProviderIds.ContainsKey("MonochromeTrack") || audio.ProviderIds.ContainsKey("TidalTrack")));
+
+        if (!isMonochrome)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // Brief pause to check if the client already advanced automatically
+                await Task.Delay(800).ConfigureAwait(false);
+
+                var activeSession = _sessionManager.Sessions.FirstOrDefault(s => s.Id == sessionId);
+                if (activeSession == null)
+                {
+                    return;
+                }
+
+                // If the client is already playing something else, do not interfere
+                if (activeSession.NowPlayingItem != null)
+                {
+                    return;
+                }
+
+                Guid nextTrackGuid;
+                lock (queue)
+                {
+                    if (queue.Count == 0)
+                    {
+                        return;
+                    }
+                    nextTrackGuid = queue[0];
+                    queue.RemoveAt(0);
+                }
+
+                _logger.LogInformation("Autoplay Radio: Client finished '{Title}'. Automatically triggering next track {NextId} on session {SessionId}...", audio.Name, nextTrackGuid, sessionId);
+
+                if (activeSession.Capabilities != null)
+                {
+                    activeSession.Capabilities.SupportsMediaControl = true;
+                }
+
+                var playNow = new PlayRequest
+                {
+                    ItemIds = new[] { nextTrackGuid },
+                    PlayCommand = PlayCommand.PlayNow
+                };
+
+                await _sessionManager.SendPlayCommand(string.Empty, sessionId, playNow, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Autoplay transition failed on session {SessionId}", sessionId);
+            }
+        });
+    }
+
     public void Dispose()
     {
         _sessionManager.PlaybackStart -= OnPlaybackStart;
+        _sessionManager.PlaybackStopped -= OnPlaybackStopped;
     }
 }

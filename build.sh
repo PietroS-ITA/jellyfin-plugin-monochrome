@@ -20,7 +20,7 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="1.3.6.0"
+VERSION="${1:-1.3.7.0}"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
 mkdir -p "$PACKAGE_DIR"
@@ -51,12 +51,20 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "category": "Live TV & Channels / Music",
     "versions": [
       {
-        "version": "${VERSION}",
-        "changelog": "Risolto errore riproduzione 'file non supportato' su tutti i client e corretta visualizzazione artista/titolo: 1) Popolazione automatica dei MediaStreamInfos per i brani Audio e supporto sia per direct play che transcodifica su file in cache. 2) Registrazione nativa degli artisti (MusicArtist) e rimozione automatica del campo Album per i singoli, garantendo che nei risultati di ricerca compaia il nome dell'artista sotto il titolo anziche il titolo del singolo. 3) Auto-riparazione SQLite all'avvio su jellyfin.db per tutti i brani memorizzati in precedenza.",
+        "version": "1.3.7.0",
+        "changelog": "Risolto troncamento a 30 secondi e skip avanti alla canzone successiva: 1) Risoluzione audio a durata INTERA (FLAC lossless da 3+ minuti anziche preview di 29.9s) tramite istanza worker HiFi dedicata con retry resiliente dei segmenti DASH. 2) Skip avanti / autoplay radio automatico: attivazione controlli multimediali di sessione, accodamento PlayLast e avanzamento automatico su PlaybackStopped. 3) Pre-caching in background delle tracce successive per passaggio istantaneo senza attese. 4) Pulizia automatica all'avvio delle vecchie anteprime da 30s (< 4MB) in cache.",
         "targetAbi": "12.0.0.0",
-        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_${VERSION}.zip",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.7.0.zip",
         "checksum": "${MD5_CHECKSUM}",
         "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
+        "version": "1.3.6.0",
+        "changelog": "Risolto errore riproduzione 'file non supportato' su tutti i client e corretta visualizzazione artista/titolo: 1) Popolazione automatica dei MediaStreamInfos per i brani Audio e supporto sia per direct play che transcodifica su file in cache. 2) Registrazione nativa degli artisti (MusicArtist) e rimozione automatica del campo Album per i singoli, garantendo che nei risultati di ricerca compaia il nome dell'artista sotto il titolo anziche il titolo del singolo. 3) Auto-riparazione SQLite all'avvio su jellyfin.db per tutti i brani memorizzati in precedenza.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.6.0.zip",
+        "checksum": "0d206f654b9f29a0081dcfb2f8158d9a",
+        "timestamp": "2026-09-10T17:18:22Z"
       },
       {
         "version": "1.3.5.0",
