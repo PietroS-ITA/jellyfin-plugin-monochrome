@@ -7,9 +7,9 @@
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <AssemblyName>Jellyfin.Plugin.Monochrome</AssemblyName>
     <RootNamespace>Jellyfin.Plugin.Monochrome</RootNamespace>
-    <Version>1.3.4.0</Version>
-    <AssemblyVersion>1.3.4.0</AssemblyVersion>
-    <FileVersion>1.3.4.0</FileVersion>
+    <Version>1.3.5.0</Version>
+    <AssemblyVersion>1.3.5.0</AssemblyVersion>
+    <FileVersion>1.3.5.0</FileVersion>
     <Authors>Monochrome Community / Jellyfin</Authors>
     <PackageId>Jellyfin.Plugin.Monochrome</PackageId>
     <Description>Monochrome Music streaming and metadata plugin for Jellyfin 12.0</Description>

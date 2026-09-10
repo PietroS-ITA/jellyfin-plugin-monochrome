@@ -142,7 +142,7 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                 }
 
                 await EnsureTrackItemAsync(trackGuid, track, parentFolder, cancellationToken).ConfigureAwait(false);
-                var score = CalculateScore(track.Title, searchTerm, 100f, 96f, 92f, 80f);
+                var score = CalculateTrackScore(track, searchTerm);
                 yield return new SearchResult(trackGuid, score);
             }
         }
@@ -161,7 +161,7 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                 }
 
                 await EnsureAlbumItemAsync(albumGuid, album, parentFolder, cancellationToken).ConfigureAwait(false);
-                var score = CalculateScore(album.Title, searchTerm, 98f, 94f, 88f, 70f);
+                var score = CalculateScore(album.Title, searchTerm, 95f, 92f, 88f, 70f);
                 yield return new SearchResult(albumGuid, score);
             }
         }
@@ -180,7 +180,7 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                 }
 
                 await EnsureArtistItemAsync(artistGuid, artist, parentFolder, cancellationToken).ConfigureAwait(false);
-                var score = CalculateScore(artist.Name, searchTerm, 97f, 93f, 85f, 65f);
+                var score = CalculateScore(artist.Name, searchTerm, 94f, 91f, 85f, 65f);
                 yield return new SearchResult(artistGuid, score);
             }
         }
@@ -206,6 +206,12 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         if (existing != null)
         {
             bool needsUpdate = false;
+            if (string.IsNullOrEmpty(existing.PresentationUniqueKey))
+            {
+                existing.PresentationUniqueKey = trackGuid.ToString("N", CultureInfo.InvariantCulture);
+                needsUpdate = true;
+            }
+
             if (parentFolder != null && (existing.ParentId != parentFolder.Id || existing.ParentId == Guid.Empty || existing.ChannelId != Guid.Empty))
             {
                 existing.SetParent(parentFolder);
@@ -219,11 +225,11 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                 try
                 {
                     await _libraryManager.UpdateItemAsync(existing, parentFolder!, ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
-                    _logger.LogDebug("Updated ParentId for track {TrackId}", track.Id);
+                    _logger.LogDebug("Updated ParentId / PresentationUniqueKey for track {TrackId}", track.Id);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "Could not update ParentId for track {TrackId}", track.Id);
+                    _logger.LogDebug(ex, "Could not update track {TrackId}", track.Id);
                 }
             }
 
@@ -241,7 +247,8 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
             Path = $"monochrome://track/{track.Id}",
             Container = "mp4",
             IndexNumber = track.TrackNumber,
-            ExternalId = $"track_{track.Id}"
+            ExternalId = $"track_{track.Id}",
+            PresentationUniqueKey = trackGuid.ToString("N", CultureInfo.InvariantCulture)
         };
 
         if (track.Album?.ReleaseDate != null && DateTime.TryParse(track.Album.ReleaseDate, out var dt))
@@ -293,6 +300,12 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         if (existing != null)
         {
             bool needsUpdate = false;
+            if (string.IsNullOrEmpty(existing.PresentationUniqueKey))
+            {
+                existing.PresentationUniqueKey = albumGuid.ToString("N", CultureInfo.InvariantCulture);
+                needsUpdate = true;
+            }
+
             if (parentFolder != null && (existing.ParentId != parentFolder.Id || existing.ParentId == Guid.Empty || existing.ChannelId != Guid.Empty))
             {
                 existing.SetParent(parentFolder);
@@ -306,11 +319,11 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                 try
                 {
                     await _libraryManager.UpdateItemAsync(existing, parentFolder!, ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
-                    _logger.LogDebug("Updated ParentId for album {AlbumId}", album.Id);
+                    _logger.LogDebug("Updated ParentId / PresentationUniqueKey for album {AlbumId}", album.Id);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "Could not update ParentId for album {AlbumId}", album.Id);
+                    _logger.LogDebug(ex, "Could not update album {AlbumId}", album.Id);
                 }
             }
 
@@ -325,7 +338,8 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
             Artists = [ artistName ],
             AlbumArtists = [ artistName ],
             ProductionYear = album.ReleaseDate != null && DateTime.TryParse(album.ReleaseDate, out var dt) ? dt.Year : null,
-            ExternalId = $"album_{album.Id}"
+            ExternalId = $"album_{album.Id}",
+            PresentationUniqueKey = albumGuid.ToString("N", CultureInfo.InvariantCulture)
         };
 
         if (parentFolder != null)
@@ -390,6 +404,12 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         if (existing != null)
         {
             bool needsUpdate = false;
+            if (string.IsNullOrEmpty(existing.PresentationUniqueKey))
+            {
+                existing.PresentationUniqueKey = artistGuid.ToString("N", CultureInfo.InvariantCulture);
+                needsUpdate = true;
+            }
+
             if (parentFolder != null && (existing.ParentId != parentFolder.Id || existing.ParentId == Guid.Empty || existing.ChannelId != Guid.Empty))
             {
                 existing.SetParent(parentFolder);
@@ -403,11 +423,11 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                 try
                 {
                     await _libraryManager.UpdateItemAsync(existing, parentFolder!, ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
-                    _logger.LogDebug("Updated ParentId for artist {ArtistId}", artist.Id);
+                    _logger.LogDebug("Updated ParentId / PresentationUniqueKey for artist {ArtistId}", artist.Id);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "Could not update ParentId for artist {ArtistId}", artist.Id);
+                    _logger.LogDebug(ex, "Could not update artist {ArtistId}", artist.Id);
                 }
             }
 
@@ -418,7 +438,8 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         {
             Id = artistGuid,
             Name = artist.Name,
-            ExternalId = $"artist_{artist.Id}"
+            ExternalId = $"artist_{artist.Id}",
+            PresentationUniqueKey = artistGuid.ToString("N", CultureInfo.InvariantCulture)
         };
 
         if (parentFolder != null)
@@ -699,6 +720,49 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         }
 
         return null;
+    }
+
+    private static float CalculateTrackScore(TidalTrackItem track, string searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return 80f;
+        }
+
+        var s = searchTerm.Trim();
+
+        // 1. Exact title match -> top priority (100)
+        if (string.Equals(track.Title?.Trim(), s, StringComparison.OrdinalIgnoreCase))
+        {
+            return 100f;
+        }
+
+        // 2. Title starts with search term (96)
+        if (track.Title?.StartsWith(s, StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return 96f;
+        }
+
+        // 3. Artist exact match -> songs by this artist should rank high (93)
+        var artistName = track.Artists?.FirstOrDefault()?.Name ?? track.Artist?.Name;
+        if (!string.IsNullOrWhiteSpace(artistName) && string.Equals(artistName.Trim(), s, StringComparison.OrdinalIgnoreCase))
+        {
+            return 93f;
+        }
+
+        // 4. Title contains search term (92)
+        if (track.Title?.Contains(s, StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return 92f;
+        }
+
+        // 5. Artist contains search term (85)
+        if (!string.IsNullOrWhiteSpace(artistName) && artistName.Contains(s, StringComparison.OrdinalIgnoreCase))
+        {
+            return 85f;
+        }
+
+        return 80f;
     }
 
     private static float CalculateScore(string? title, string searchTerm, float exactScore, float startsWithScore, float containsScore, float baseScore)

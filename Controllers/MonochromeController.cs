@@ -52,6 +52,41 @@ public class MonochromeController : ControllerBase
     }
 
     /// <summary>
+    /// Gets the current plugin configuration.
+    /// </summary>
+    [HttpGet("Configuration")]
+    public IActionResult GetConfiguration()
+    {
+        if (Plugin.Instance == null)
+        {
+            return NotFound(new { error = "Plugin instance not initialized" });
+        }
+
+        return Ok(Plugin.Instance.Configuration);
+    }
+
+    /// <summary>
+    /// Updates the plugin configuration and saves it to disk.
+    /// </summary>
+    [HttpPost("Configuration")]
+    public IActionResult UpdateConfiguration([FromBody] Jellyfin.Plugin.Monochrome.Configuration.PluginConfiguration newConfig)
+    {
+        if (Plugin.Instance == null)
+        {
+            return NotFound(new { error = "Plugin instance not initialized" });
+        }
+
+        if (newConfig == null)
+        {
+            return BadRequest(new { error = "Configuration body cannot be null" });
+        }
+
+        Plugin.Instance.UpdateConfiguration(newConfig);
+        _logger.LogInformation("Monochrome configuration successfully updated and saved to disk.");
+        return Ok(new { success = true, configuration = Plugin.Instance.Configuration });
+    }
+
+    /// <summary>
     /// Stream resolver: redirects to or proxies the direct audio stream for a track.
     /// </summary>
     /// <param name="trackId">The numeric TIDAL track ID.</param>

@@ -100,22 +100,90 @@
                 pluginUniqueId: '0a9d15e2-6bf3-4674-8b1b-7a329d7831d1'
             };
 
-            document.querySelector('#MonochromeConfigPage').addEventListener('pageshow', function () {
+            function getCfg(cfg, key) {
+                if (!cfg) return undefined;
+                if (cfg[key] !== undefined) return cfg[key];
+                const camel = key.charAt(0).toLowerCase() + key.slice(1);
+                if (cfg[camel] !== undefined) return cfg[camel];
+                const pascal = key.charAt(0).toUpperCase() + key.slice(1);
+                if (cfg[pascal] !== undefined) return cfg[pascal];
+                return undefined;
+            }
+
+            function setCfg(cfg, key, val) {
+                cfg[key] = val;
+                const camel = key.charAt(0).toLowerCase() + key.slice(1);
+                cfg[camel] = val;
+                const pascal = key.charAt(0).toUpperCase() + key.slice(1);
+                cfg[pascal] = val;
+            }
+
+            function applyConfigValues(page, config) {
+                const apiBase = getCfg(config, 'ApiBaseUrl') || 'https://monochrome.tf';
+                const quality = getCfg(config, 'AudioQuality') || 'LOSSLESS';
+                const country = getCfg(config, 'CountryCode') || 'IT';
+                const useDirect = getCfg(config, 'UseDirectTidalApi');
+                const token = getCfg(config, 'CustomToken') || '';
+                const enableChannel = getCfg(config, 'EnableChannel');
+                const enableProxy = getCfg(config, 'EnableStreamProxy');
+                const strmPath = getCfg(config, 'StrmLibraryPath') || '';
+
+                const apiInput = page.querySelector('#ApiBaseUrl');
+                if (apiInput) apiInput.value = apiBase;
+
+                const qualitySelect = page.querySelector('#AudioQuality');
+                if (qualitySelect) qualitySelect.value = quality;
+
+                const countryInput = page.querySelector('#CountryCode');
+                if (countryInput) countryInput.value = country;
+
+                const directCb = page.querySelector('#UseDirectTidalApi');
+                if (directCb) directCb.checked = useDirect !== false;
+
+                const tokenInput = page.querySelector('#CustomToken');
+                if (tokenInput) tokenInput.value = token;
+
+                const channelCb = page.querySelector('#EnableChannel');
+                if (channelCb) channelCb.checked = enableChannel === true;
+
+                const proxyCb = page.querySelector('#EnableStreamProxy');
+                if (proxyCb) proxyCb.checked = enableProxy === true;
+
+                const strmInput = page.querySelector('#StrmLibraryPath');
+                if (strmInput) strmInput.value = strmPath;
+
+                Dashboard.hideLoadingMsg();
+            }
+
+            function loadConfig(page) {
+                page = page || document.querySelector('#MonochromeConfigPage');
+                if (!page) return;
+
                 Dashboard.showLoadingMsg();
 
-                ApiClient.getPluginConfiguration(MonochromeConfig.pluginUniqueId).then(function (config) {
-                    document.querySelector('#ApiBaseUrl').value = config.ApiBaseUrl || 'https://monochrome.tf';
-                    document.querySelector('#AudioQuality').value = config.AudioQuality || 'LOSSLESS';
-                    document.querySelector('#CountryCode').value = config.CountryCode || 'IT';
-                    document.querySelector('#UseDirectTidalApi').checked = config.UseDirectTidalApi !== false;
-                    document.querySelector('#CustomToken').value = config.CustomToken || '';
-                    document.querySelector('#EnableChannel').checked = config.EnableChannel !== false;
-                    document.querySelector('#EnableStreamProxy').checked = config.EnableStreamProxy === true;
-                    document.querySelector('#StrmLibraryPath').value = config.StrmLibraryPath || '';
-
-                    Dashboard.hideLoadingMsg();
+                ApiClient.fetch({
+                    url: ApiClient.getUrl('Monochrome/Configuration'),
+                    type: 'GET'
+                }).then(function (response) {
+                    return response.json();
+                }).then(function (config) {
+                    applyConfigValues(page, config);
+                }).catch(function () {
+                    ApiClient.getPluginConfiguration(MonochromeConfig.pluginUniqueId).then(function (config) {
+                        applyConfigValues(page, config);
+                    }).catch(function (err) {
+                        Dashboard.hideLoadingMsg();
+                        console.error('Error loading Monochrome configuration:', err);
+                    });
                 });
-            });
+            }
+
+            const pageElem = document.querySelector('#MonochromeConfigPage');
+            if (pageElem) {
+                pageElem.addEventListener('viewshow', function () { loadConfig(this); });
+                pageElem.addEventListener('pageshow', function () { loadConfig(this); });
+            }
+            loadConfig(pageElem);
 
             document.querySelector('#TestConnectionBtn').addEventListener('click', function () {
                 const resultDiv = document.querySelector('#TestConnectionResult');
@@ -145,18 +213,42 @@
                 e.preventDefault();
                 Dashboard.showLoadingMsg();
 
-                ApiClient.getPluginConfiguration(MonochromeConfig.pluginUniqueId).then(function (config) {
-                    config.ApiBaseUrl = document.querySelector('#ApiBaseUrl').value;
-                    config.AudioQuality = document.querySelector('#AudioQuality').value;
-                    config.CountryCode = (document.querySelector('#CountryCode').value || 'IT').toUpperCase();
-                    config.UseDirectTidalApi = document.querySelector('#UseDirectTidalApi').checked;
-                    config.CustomToken = document.querySelector('#CustomToken').value;
-                    config.EnableChannel = document.querySelector('#EnableChannel').checked;
-                    config.EnableStreamProxy = document.querySelector('#EnableStreamProxy').checked;
-                    config.StrmLibraryPath = document.querySelector('#StrmLibraryPath').value;
+                const payload = {
+                    ApiBaseUrl: document.querySelector('#ApiBaseUrl').value,
+                    AudioQuality: document.querySelector('#AudioQuality').value,
+                    CountryCode: (document.querySelector('#CountryCode').value || 'IT').toUpperCase(),
+                    UseDirectTidalApi: document.querySelector('#UseDirectTidalApi').checked,
+                    CustomToken: document.querySelector('#CustomToken').value,
+                    EnableChannel: document.querySelector('#EnableChannel').checked,
+                    EnableStreamProxy: document.querySelector('#EnableStreamProxy').checked,
+                    StrmLibraryPath: document.querySelector('#StrmLibraryPath').value
+                };
 
-                    ApiClient.updatePluginConfiguration(MonochromeConfig.pluginUniqueId, config).then(function (result) {
-                        Dashboard.processPluginConfigurationUpdateResult(result);
+                ApiClient.fetch({
+                    url: ApiClient.getUrl('Monochrome/Configuration'),
+                    type: 'POST',
+                    data: JSON.stringify(payload),
+                    contentType: 'application/json'
+                }).then(function () {
+                    return ApiClient.getPluginConfiguration(MonochromeConfig.pluginUniqueId).then(function (config) {
+                        config = config || {};
+                        for (let k in payload) {
+                            setCfg(config, k, payload[k]);
+                        }
+                        return ApiClient.updatePluginConfiguration(MonochromeConfig.pluginUniqueId, config);
+                    });
+                }).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                }).catch(function () {
+                    // Fallback to updating standard config directly
+                    ApiClient.getPluginConfiguration(MonochromeConfig.pluginUniqueId).then(function (config) {
+                        config = config || {};
+                        for (let k in payload) {
+                            setCfg(config, k, payload[k]);
+                        }
+                        ApiClient.updatePluginConfiguration(MonochromeConfig.pluginUniqueId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
                     });
                 });
 

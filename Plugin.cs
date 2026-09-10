@@ -25,6 +25,20 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         Instance = this;
     }
 
+    /// <inheritdoc />
+    public override void UpdateConfiguration(BasePluginConfiguration configuration)
+    {
+        if (configuration is PluginConfiguration newConfig)
+        {
+            Configuration = newConfig;
+            SaveConfiguration();
+        }
+        else
+        {
+            base.UpdateConfiguration(configuration);
+        }
+    }
+
     /// <summary>
     /// Gets the current plugin instance.
     /// </summary>

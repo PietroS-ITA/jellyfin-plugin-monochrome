@@ -1,5 +1,6 @@
 using Jellyfin.Plugin.Monochrome.Api;
 using Jellyfin.Plugin.Monochrome.Channels;
+using Jellyfin.Plugin.Monochrome.Playback;
 using Jellyfin.Plugin.Monochrome.Providers;
 using Jellyfin.Plugin.Monochrome.Search;
 using Jellyfin.Plugin.Monochrome.Similar;
@@ -9,6 +10,7 @@ using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Jellyfin.Plugin.Monochrome;
 
@@ -32,6 +34,10 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<MonochromeSimilarItemsProvider>();
         serviceCollection.AddSingleton<ILocalSimilarItemsProvider<Audio>>(sp => sp.GetRequiredService<MonochromeSimilarItemsProvider>());
         serviceCollection.AddSingleton<ISimilarItemsProvider>(sp => sp.GetRequiredService<MonochromeSimilarItemsProvider>());
+
+        // Autoplay radio playback manager (background hosted service)
+        serviceCollection.AddSingleton<MonochromePlaybackManager>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<MonochromePlaybackManager>());
     }
 }
 

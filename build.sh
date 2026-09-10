@@ -20,7 +20,7 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="1.3.4.0"
+VERSION="1.3.5.0"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
 mkdir -p "$PACKAGE_DIR"
@@ -52,11 +52,19 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "versions": [
       {
         "version": "${VERSION}",
-        "changelog": "Risolto il problema della ricerca globale che mostrava un solo risultato e preferiva artisti ai brani: 1) Risoluzione accurata della cartella fisica della libreria (PhysicalFolderIds) tramite viste utente e cartelle virtuali, superando il filtro TopParentId di FilterByUserAccessAsync in Jellyfin 12.0. 2) Ranking prioritario intelligente: brani con titolo esatto (es. 'Magnetic') hanno punteggio 100f e compaiono in cima alla lista prima di album e artisti. 3) Salvataggio istantaneo nei Preferiti utente senza file fisici sul server. 4) Autoplay radio su stile e genere.",
+        "changelog": "Risolto definitivamente il problema del singolo risultato e del salvataggio impostazioni: 1) Assegnazione di PresentationUniqueKey deterministica a brani, album e artisti, impedendo a ApplyGroupingFilter di Jellyfin di collassare tutti i risultati in un unico elemento. 2) Auto-riparazione SQLite all'avvio su jellyfin.db per correggere gli elementi preesistenti. 3) Corretto il pannello impostazioni (supporto camelCase / PascalCase e evento viewshow per la SPA Jellyfin Web). 4) Canale Monochrome disattivato di default per non intasare la home. 5) Autoplay radio automatico stile Spotify al termine del singolo brano.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_${VERSION}.zip",
         "checksum": "${MD5_CHECKSUM}",
         "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
+        "version": "1.3.4.0",
+        "changelog": "Risoluzione libreria fisica (PhysicalFolderIds) tramite viste utente e cartelle virtuali per filtro TopParentId di FilterByUserAccessAsync in Jellyfin 12.0.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.4.0.zip",
+        "checksum": "d135ea5fe9fc0ee4d2e87c0ff569d675",
+        "timestamp": "2026-09-10T14:10:00Z"
       },
       {
         "version": "1.3.3.0",
