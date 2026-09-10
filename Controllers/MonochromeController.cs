@@ -6,7 +6,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Monochrome.Api;
 using Jellyfin.Plugin.Monochrome.Search;
+using Jellyfin.Plugin.Monochrome.Playback;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using Microsoft.AspNetCore.Http;
@@ -28,6 +30,7 @@ public class MonochromeController : ControllerBase
     private readonly ILibraryManager _libraryManager;
     private readonly IUserManager _userManager;
     private readonly IUserDataManager _userDataManager;
+    private readonly MonochromePlaybackManager? _playbackManager;
     private readonly ILogger<MonochromeController> _logger;
 
     /// <summary>
@@ -40,7 +43,8 @@ public class MonochromeController : ControllerBase
         ILibraryManager libraryManager,
         IUserManager userManager,
         IUserDataManager userDataManager,
-        ILogger<MonochromeController> logger)
+        ILogger<MonochromeController> logger,
+        MonochromePlaybackManager? playbackManager = null)
     {
         _apiClient = apiClient;
         _searchProvider = searchProvider;
@@ -48,6 +52,7 @@ public class MonochromeController : ControllerBase
         _libraryManager = libraryManager;
         _userManager = userManager;
         _userDataManager = userDataManager;
+        _playbackManager = playbackManager;
         _logger = logger;
     }
 
@@ -458,6 +463,126 @@ public class MonochromeController : ControllerBase
             _logger.LogError(ex, "Failed to favorite track {TrackId}", trackId);
             return StatusCode(StatusCodes.Status500InternalServerError, new { error = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Gets synchronized or plain lyrics for a track ID.
+    /// </summary>
+    [HttpGet("Tracks/{trackId}/Lyrics")]
+    public async Task<IActionResult> GetLyrics(long trackId, CancellationToken cancellationToken)
+    {
+        if (trackId <= 0)
+        {
+            return BadRequest(new { error = "Invalid trackId" });
+        }
+
+        var lyrics = await _apiClient.GetTrackLyricsAsync(trackId, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (lyrics == null)
+        {
+            return NotFound(new { error = "No lyrics found for track " + trackId });
+        }
+
+        return Ok(lyrics);
+    }
+
+    /// <summary>
+    /// Gets synchronized or plain lyrics for a track GUID in the library.
+    /// </summary>
+    [HttpGet("Tracks/ByGuid/{guid}/Lyrics")]
+    public async Task<IActionResult> GetLyricsByGuid(Guid guid, CancellationToken cancellationToken)
+    {
+        var item = _libraryManager.GetItemById(guid);
+        if (item is Audio audio)
+        {
+            long trackId = 0;
+            if (audio.ProviderIds != null)
+            {
+                if (audio.ProviderIds.TryGetValue("TidalTrack", out var tStr) || audio.ProviderIds.TryGetValue("MonochromeTrack", out tStr))
+                {
+                    long.TryParse(tStr, out trackId);
+                }
+            }
+
+            if (trackId == 0 && audio.ExternalId != null && audio.ExternalId.StartsWith("track_"))
+            {
+                long.TryParse(audio.ExternalId.Substring(6), out trackId);
+            }
+
+            var artist = audio.Artists?.FirstOrDefault() ?? audio.AlbumArtists?.FirstOrDefault();
+            var lyrics = await _apiClient.GetTrackLyricsAsync(trackId, audio.Name, artist, cancellationToken).ConfigureAwait(false);
+            if (lyrics != null)
+            {
+                return Ok(lyrics);
+            }
+        }
+
+        return NotFound(new { error = "No lyrics found" });
+    }
+
+    /// <summary>
+    /// Advances playback to the next song in the radio queue.
+    /// </summary>
+    [HttpGet("Playback/Next")]
+    public async Task<IActionResult> TriggerNextRadioTrack([FromQuery] string? sessionId = null, [FromQuery] Guid? userId = null, CancellationToken cancellationToken = default)
+    {
+        if (_playbackManager != null)
+        {
+            var nextGuid = await _playbackManager.PlayNextRadioTrackAsync(sessionId, userId, cancellationToken).ConfigureAwait(false);
+            if (nextGuid.HasValue)
+            {
+                return Ok(new { success = true, nextTrackId = nextGuid.Value });
+            }
+        }
+
+        return Ok(new { success = false, message = "No tracks in radio queue." });
+    }
+
+    /// <summary>
+    /// Serves the Apple Music style karaoke script for Jellyfin Web.
+    /// </summary>
+    [HttpGet("karaoke.js")]
+    public IActionResult GetKaraokeJs()
+    {
+        var asm = typeof(MonochromeController).Assembly;
+        var resourceName = "Jellyfin.Plugin.Monochrome.Web.karaoke.js";
+        using var stream = asm.GetManifestResourceStream(resourceName);
+        if (stream != null)
+        {
+            using var reader = new StreamReader(stream);
+            return Content(reader.ReadToEnd(), "application/javascript");
+        }
+
+        var localPath = Path.Combine(AppContext.BaseDirectory, "Web", "karaoke.js");
+        if (System.IO.File.Exists(localPath))
+        {
+            return PhysicalFile(localPath, "application/javascript");
+        }
+
+        return NotFound();
+    }
+
+    /// <summary>
+    /// Serves the Apple Music style karaoke styles for Jellyfin Web.
+    /// </summary>
+    [HttpGet("karaoke.css")]
+    public IActionResult GetKaraokeCss()
+    {
+        var asm = typeof(MonochromeController).Assembly;
+        var resourceName = "Jellyfin.Plugin.Monochrome.Web.karaoke.css";
+        using var stream = asm.GetManifestResourceStream(resourceName);
+        if (stream != null)
+        {
+            using var reader = new StreamReader(stream);
+            return Content(reader.ReadToEnd(), "text/css");
+        }
+
+        var localPath = Path.Combine(AppContext.BaseDirectory, "Web", "karaoke.css");
+        if (System.IO.File.Exists(localPath))
+        {
+            return PhysicalFile(localPath, "text/css");
+        }
+
+        return NotFound();
     }
 
     private static string SanitizePath(string name)

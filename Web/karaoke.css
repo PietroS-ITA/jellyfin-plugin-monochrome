@@ -1,0 +1,221 @@
+/* ==========================================================================
+   Monochrome Apple Music Style Karaoke Lyrics CSS
+   ========================================================================== */
+
+#btnMonochromeLyrics {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    margin: 0 8px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    vertical-align: middle;
+    z-index: 100;
+}
+
+#btnMonochromeLyrics:hover {
+    background: rgba(255, 255, 255, 0.28);
+    border-color: rgba(255, 255, 255, 0.45);
+    transform: scale(1.05);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+#btnMonochromeLyrics .mic-icon {
+    font-size: 16px;
+    line-height: 1;
+}
+
+/* Fullscreen Apple Music Karaoke Modal */
+#monochromeKaraokeModal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 999999;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transform: scale(1.02);
+}
+
+#monochromeKaraokeModal.active {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scale(1);
+}
+
+/* Dynamic Animated Blurred Cover Art Backdrop */
+#monochromeKaraokeBackdrop {
+    position: absolute;
+    top: -60px;
+    left: -60px;
+    right: -60px;
+    bottom: -60px;
+    background-size: cover;
+    background-position: center;
+    filter: blur(90px) brightness(0.35) saturate(190%);
+    transform: scale(1.15);
+    transition: background-image 0.7s ease-in-out;
+    will-change: transform, filter;
+}
+
+#monochromeKaraokeOverlay {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 40% 40%, rgba(0, 0, 0, 0.15) 0%, rgba(0, 0, 0, 0.75) 100%);
+    pointer-events: none;
+}
+
+/* Header Section */
+.monochrome-karaoke-header {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24px 36px;
+    backdrop-filter: blur(10px);
+    background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+}
+
+.monochrome-karaoke-meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.monochrome-karaoke-thumb {
+    width: 52px;
+    height: 52px;
+    border-radius: 8px;
+    object-fit: cover;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+}
+
+.monochrome-karaoke-titles {
+    display: flex;
+    flex-direction: column;
+}
+
+.monochrome-karaoke-song {
+    color: #ffffff;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    margin: 0;
+}
+
+.monochrome-karaoke-artist {
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 14px;
+    font-weight: 600;
+    margin: 2px 0 0 0;
+}
+
+.monochrome-karaoke-close {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+    transition: all 0.2s ease;
+}
+
+.monochrome-karaoke-close:hover {
+    background: rgba(255, 255, 255, 0.35);
+    transform: scale(1.1);
+}
+
+/* Lyrics Scroll Area */
+#monochromeKaraokeScroll {
+    position: relative;
+    z-index: 10;
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+    padding: 35vh 10vw 45vh 10vw;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Custom Scrollbar */
+#monochromeKaraokeScroll::-webkit-scrollbar {
+    width: 6px;
+}
+#monochromeKaraokeScroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+/* Lyric Lines */
+.monochrome-lyric-line {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: clamp(26px, 3.8vw, 42px);
+    font-weight: 700;
+    line-height: 1.32;
+    letter-spacing: -0.4px;
+    color: rgba(255, 255, 255, 0.28);
+    cursor: pointer;
+    border-radius: 14px;
+    padding: 6px 16px;
+    margin-left: -16px;
+    width: fit-content;
+    max-width: 90%;
+    transition: all 0.35s cubic-bezier(0.2, 0, 0, 1);
+    user-select: none;
+    will-change: transform, color, opacity;
+}
+
+.monochrome-lyric-line:hover {
+    color: rgba(255, 255, 255, 0.75);
+    transform: scale(1.02);
+}
+
+.monochrome-lyric-line.active {
+    color: #ffffff !important;
+    transform: scale(1.05);
+    transform-origin: left center;
+    text-shadow: 0 0 28px rgba(255, 255, 255, 0.7);
+    opacity: 1 !important;
+}
+
+.monochrome-lyric-line.passed {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+/* Empty / Loading State */
+.monochrome-karaoke-empty {
+    font-size: 24px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+    margin: auto;
+    text-align: center;
+}

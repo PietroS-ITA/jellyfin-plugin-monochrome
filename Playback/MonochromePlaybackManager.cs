@@ -62,6 +62,15 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
         {
             _logger.LogError(ex, "RepairDatabaseAsync top-level exception");
         }
+
+        try
+        {
+            InjectWebClientScript();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Web script injection encountered an issue");
+        }
     }
 
     private async Task RepairDatabaseAsync()
@@ -415,6 +424,20 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
             return;
         }
 
+        // Check if playback was stopped manually by the user
+        if (!e.PlayedToCompletion)
+        {
+            var posTicks = e.PlaybackPositionTicks ?? 0;
+            var runTicks = audio.RunTimeTicks ?? 0;
+            // If stopped more than 3 seconds before end of song, the user pressed STOP!
+            if (runTicks > 0 && posTicks < (runTicks - 3 * TimeSpan.TicksPerSecond))
+            {
+                _logger.LogInformation("Monochrome Autoplay: Track '{Title}' was stopped manually at {Pos}s / {Total}s. Not auto-advancing.",
+                    audio.Name, posTicks / 10_000_000, runTicks / 10_000_000);
+                return;
+            }
+        }
+
         _ = Task.Run(async () =>
         {
             try
@@ -465,6 +488,128 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                 _logger.LogDebug(ex, "Autoplay transition failed on session {SessionId}", sessionId);
             }
         });
+    }
+
+    /// <summary>
+    /// Forcibly plays the next radio track for a session or user.
+    /// </summary>
+    public async Task<Guid?> PlayNextRadioTrackAsync(string? sessionId, Guid? userId, CancellationToken cancellationToken = default)
+    {
+        List<Guid>? queue = null;
+        if (!string.IsNullOrEmpty(sessionId))
+        {
+            _sessionRadioQueues.TryGetValue(sessionId, out queue);
+        }
+
+        if ((queue == null || queue.Count == 0) && userId.HasValue && userId.Value != Guid.Empty)
+        {
+            _userRadioQueues.TryGetValue(userId.Value, out queue);
+        }
+
+        if (queue == null || queue.Count == 0)
+        {
+            var anyQueue = _sessionRadioQueues.Values.FirstOrDefault(q => q.Count > 0)
+                           ?? _userRadioQueues.Values.FirstOrDefault(q => q.Count > 0);
+            queue = anyQueue;
+        }
+
+        if (queue == null || queue.Count == 0)
+        {
+            return null;
+        }
+
+        Guid nextTrackGuid;
+        lock (queue)
+        {
+            if (queue.Count == 0) return null;
+            nextTrackGuid = queue[0];
+            queue.RemoveAt(0);
+        }
+
+        var session = !string.IsNullOrEmpty(sessionId)
+            ? _sessionManager.Sessions.FirstOrDefault(s => s.Id == sessionId)
+            : _sessionManager.Sessions.FirstOrDefault(s => userId.HasValue && s.UserId == userId.Value);
+
+        if (session != null)
+        {
+            if (session.Capabilities != null)
+            {
+                session.Capabilities.SupportsMediaControl = true;
+            }
+
+            var playNow = new PlayRequest
+            {
+                ItemIds = new[] { nextTrackGuid },
+                PlayCommand = PlayCommand.PlayNow
+            };
+
+            await _sessionManager.SendPlayCommand(string.Empty, session.Id, playNow, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Autoplay Radio: Client requested Next track {NextId} on session {SessionId}", nextTrackGuid, session.Id);
+        }
+
+        return nextTrackGuid;
+    }
+
+    private void InjectWebClientScript()
+    {
+        var candidatePaths = new List<string>();
+        try
+        {
+            if (!string.IsNullOrEmpty(_applicationPaths.WebPath))
+            {
+                candidatePaths.Add(Path.Combine(_applicationPaths.WebPath, "index.html"));
+            }
+        }
+        catch { }
+
+        candidatePaths.Add("/jellyfin/jellyfin-web/index.html");
+        candidatePaths.Add("/usr/share/jellyfin/web/index.html");
+
+        var indexPath = candidatePaths.FirstOrDefault(File.Exists);
+        if (string.IsNullOrEmpty(indexPath))
+        {
+            _logger.LogInformation("Monochrome Web: index.html not found in candidate paths.");
+            return;
+        }
+
+        try
+        {
+            var content = File.ReadAllText(indexPath);
+            bool modified = false;
+
+            const string scriptTag = "<script plugin=\"Monochrome\" src=\"/Monochrome/karaoke.js\" defer></script>";
+            const string styleTag = "<link plugin=\"Monochrome\" rel=\"stylesheet\" href=\"/Monochrome/karaoke.css\">";
+
+            if (!content.Contains("/Monochrome/karaoke.css", StringComparison.OrdinalIgnoreCase))
+            {
+                var headEnd = content.IndexOf("</head>", StringComparison.OrdinalIgnoreCase);
+                if (headEnd != -1)
+                {
+                    content = content.Insert(headEnd, styleTag);
+                    modified = true;
+                }
+            }
+
+            if (!content.Contains("/Monochrome/karaoke.js", StringComparison.OrdinalIgnoreCase))
+            {
+                var bodyEnd = content.IndexOf("</body>", StringComparison.OrdinalIgnoreCase);
+                if (bodyEnd != -1)
+                {
+                    content = content.Insert(bodyEnd, scriptTag);
+                    modified = true;
+                }
+            }
+
+            if (modified)
+            {
+                File.WriteAllText(indexPath, content);
+                _logger.LogInformation("Monochrome Web: Successfully injected Karaoke UI into {Path}", indexPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Monochrome Web: Could not modify index.html for Karaoke UI.");
+        }
     }
 
     public void Dispose()

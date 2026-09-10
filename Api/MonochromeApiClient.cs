@@ -8,6 +8,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -129,7 +130,13 @@ public class MonochromeApiClient
         var countryCode = string.IsNullOrWhiteSpace(Config.CountryCode) ? "IT" : Config.CountryCode.ToUpperInvariant();
         var limit = Config.SearchLimit > 0 ? Config.SearchLimit : 25;
 
-        var url = $"{TidalApiBase}/search?query={Uri.EscapeDataString(query)}&limit={limit}&countryCode={countryCode}";
+        var normalizedQuery = query.Replace('+', ' ').Trim();
+        while (normalizedQuery.Contains("  "))
+        {
+            normalizedQuery = normalizedQuery.Replace("  ", " ");
+        }
+
+        var url = $"{TidalApiBase}/search?query={Uri.EscapeDataString(normalizedQuery)}&limit={limit}&countryCode={countryCode}";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -701,6 +708,16 @@ public class MonochromeApiClient
             // Clean older cached tracks in background if cache exceeds limit
             _ = Task.Run(() => CleanCacheIfNecessary(cacheDir));
 
+            // Pre-fetch lyrics in background and cache .lrc
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await GetTrackLyricsAsync(trackId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                }
+                catch { }
+            });
+
             return targetFile;
         }
         finally
@@ -870,6 +887,200 @@ public class MonochromeApiClient
 
         var path = pictureId.Replace("-", "/", StringComparison.Ordinal);
         return $"https://resources.tidal.com/images/{path}/{size}x{size}.jpg";
+    }
+
+    /// <summary>
+    /// Retrieves synchronized (or plain) lyrics for a track, caching the .lrc file locally.
+    /// </summary>
+    public async Task<TrackLyricsResult?> GetTrackLyricsAsync(long trackId, string? title = null, string? artist = null, CancellationToken cancellationToken = default)
+    {
+        var cacheDir = Path.Combine(_applicationPaths.CachePath, "monochrome");
+        var lrcFile = Path.Combine(cacheDir, $"{trackId}.lrc");
+
+        // 1. Check if cached .lrc file already exists
+        if (File.Exists(lrcFile))
+        {
+            try
+            {
+                var cachedLrc = await File.ReadAllTextAsync(lrcFile, cancellationToken).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(cachedLrc))
+                {
+                    var cachedResult = ParseLrc(cachedLrc, trackId, title, artist);
+                    if (cachedResult.Lines.Count > 0)
+                    {
+                        return cachedResult;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed reading cached lyrics for track {TrackId}", trackId);
+            }
+        }
+
+        // 2. Query TIDAL / Monochrome HiFi API for lyrics
+        try
+        {
+            var hifiUrl = $"https://hifi-api-workers.orbmusic.workers.dev/lyrics?id={trackId}";
+            using var req = new HttpRequestMessage(HttpMethod.Get, hifiUrl);
+            req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+            using var res = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
+            if (res.IsSuccessStatusCode)
+            {
+                var json = await res.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("lyrics", out var lyricsObj))
+                {
+                    string? subtitles = lyricsObj.TryGetProperty("subtitles", out var subProp) ? subProp.GetString() : null;
+                    string? plain = lyricsObj.TryGetProperty("lyrics", out var lyrProp) ? lyrProp.GetString() : null;
+
+                    if (!string.IsNullOrWhiteSpace(subtitles))
+                    {
+                        var result = ParseLrc(subtitles, trackId, title, artist);
+                        result.PlainLyrics = plain ?? result.PlainLyrics;
+
+                        // Save cache file
+                        try
+                        {
+                            Directory.CreateDirectory(cacheDir);
+                            await File.WriteAllTextAsync(lrcFile, subtitles, cancellationToken).ConfigureAwait(false);
+                        }
+                        catch { }
+
+                        return result;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(plain))
+                    {
+                        return new TrackLyricsResult
+                        {
+                            TrackId = trackId,
+                            Title = title ?? string.Empty,
+                            Artist = artist ?? string.Empty,
+                            HasSynced = false,
+                            PlainLyrics = plain
+                        };
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "HiFi lyrics resolution failed for track {TrackId}", trackId);
+        }
+
+        // 3. Fallback: Query LRCLIB.net for synchronized lyrics
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            try
+            {
+                var queryArtist = !string.IsNullOrWhiteSpace(artist) ? $"&artist_name={Uri.EscapeDataString(artist)}" : string.Empty;
+                var lrclibUrl = $"https://lrclib.net/api/get?track_name={Uri.EscapeDataString(title)}{queryArtist}";
+                using var req = new HttpRequestMessage(HttpMethod.Get, lrclibUrl);
+                req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+                using var res = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
+                if (res.IsSuccessStatusCode)
+                {
+                    var json = await res.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    using var doc = JsonDocument.Parse(json);
+                    string? synced = doc.RootElement.TryGetProperty("syncedLyrics", out var sProp) ? sProp.GetString() : null;
+                    string? plain = doc.RootElement.TryGetProperty("plainLyrics", out var pProp) ? pProp.GetString() : null;
+
+                    if (!string.IsNullOrWhiteSpace(synced))
+                    {
+                        var result = ParseLrc(synced, trackId, title, artist);
+                        result.PlainLyrics = plain ?? result.PlainLyrics;
+
+                        try
+                        {
+                            Directory.CreateDirectory(cacheDir);
+                            await File.WriteAllTextAsync(lrcFile, synced, cancellationToken).ConfigureAwait(false);
+                        }
+                        catch { }
+
+                        return result;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(plain))
+                    {
+                        return new TrackLyricsResult
+                        {
+                            TrackId = trackId,
+                            Title = title ?? string.Empty,
+                            Artist = artist ?? string.Empty,
+                            HasSynced = false,
+                            PlainLyrics = plain
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "LRCLIB lyrics resolution failed for track {TrackId}", trackId);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Parses LRC content into a structured TrackLyricsResult.
+    /// </summary>
+    public static TrackLyricsResult ParseLrc(string lrcContent, long trackId = 0, string? title = null, string? artist = null)
+    {
+        var result = new TrackLyricsResult
+        {
+            TrackId = trackId,
+            Title = title ?? string.Empty,
+            Artist = artist ?? string.Empty,
+            RawLrc = lrcContent
+        };
+
+        var lrcRegex = new Regex(@"\[(\d{1,2}):(\d{2})(?:\.(\d{2,3}))?\](.*)", RegexOptions.Compiled);
+        var lines = new List<SyncedLyricLine>();
+        var plainBuilder = new StringBuilder();
+
+        using var reader = new StringReader(lrcContent);
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var match = lrcRegex.Match(line);
+            if (match.Success)
+            {
+                int.TryParse(match.Groups[1].Value, out var mins);
+                int.TryParse(match.Groups[2].Value, out var secs);
+                int ms = 0;
+                if (match.Groups[3].Success)
+                {
+                    var msStr = match.Groups[3].Value;
+                    if (msStr.Length == 2) msStr += "0";
+                    int.TryParse(msStr, out ms);
+                }
+
+                double totalSeconds = (mins * 60) + secs + (ms / 1000.0);
+                long ticks = (long)(totalSeconds * TimeSpan.TicksPerSecond);
+                var text = match.Groups[4].Value.Trim();
+
+                if (!string.IsNullOrEmpty(text))
+                {
+                    lines.Add(new SyncedLyricLine
+                    {
+                        Time = Math.Round(totalSeconds, 2),
+                        Ticks = ticks,
+                        Text = text
+                    });
+                    plainBuilder.AppendLine(text);
+                }
+            }
+            else if (!line.StartsWith('[') && !string.IsNullOrWhiteSpace(line))
+            {
+                plainBuilder.AppendLine(line.Trim());
+            }
+        }
+
+        result.Lines = lines.OrderBy(l => l.Time).ToList();
+        result.HasSynced = result.Lines.Count > 0;
+        result.PlainLyrics = plainBuilder.ToString().TrimEnd();
+
+        return result;
     }
 }
 

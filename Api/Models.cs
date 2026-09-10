@@ -190,3 +190,45 @@ public class ResolvedStream
     public List<string> DashSegmentUrls { get; set; } = new();
 }
 
+/// <summary>
+/// A single line of synchronized lyrics.
+/// </summary>
+public class SyncedLyricLine
+{
+    [JsonPropertyName("time")]
+    public double Time { get; set; }
+
+    [JsonPropertyName("ticks")]
+    public long Ticks { get; set; }
+
+    [JsonPropertyName("text")]
+    public string Text { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Parsed lyrics result for a track.
+/// </summary>
+public class TrackLyricsResult
+{
+    [JsonPropertyName("trackId")]
+    public long TrackId { get; set; }
+
+    [JsonPropertyName("title")]
+    public string Title { get; set; } = string.Empty;
+
+    [JsonPropertyName("artist")]
+    public string Artist { get; set; } = string.Empty;
+
+    [JsonPropertyName("hasSynced")]
+    public bool HasSynced { get; set; }
+
+    [JsonPropertyName("rawLrc")]
+    public string RawLrc { get; set; } = string.Empty;
+
+    [JsonPropertyName("plainLyrics")]
+    public string PlainLyrics { get; set; } = string.Empty;
+
+    [JsonPropertyName("lines")]
+    public List<SyncedLyricLine> Lines { get; set; } = new();
+}
+

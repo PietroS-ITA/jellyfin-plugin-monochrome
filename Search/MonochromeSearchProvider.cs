@@ -141,10 +141,16 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         // 1. Tracks (Audio items)
         if (catalog.Tracks?.Items != null && AllowsType(query, BaseItemKind.Audio))
         {
-            foreach (var track in catalog.Tracks.Items)
+            var rankedTracks = catalog.Tracks.Items
+                .Select(t => new { Track = t, Score = CalculateTrackScore(t, searchTerm) })
+                .OrderByDescending(x => x.Score)
+                .ToList();
+
+            foreach (var item in rankedTracks)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
+                var track = item.Track;
                 var trackGuid = GetDeterministicGuid($"monochrome_track_{track.Id}");
                 if (!seen.Add(trackGuid))
                 {
@@ -152,8 +158,7 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
                 }
 
                 await EnsureTrackItemAsync(trackGuid, track, parentFolder, cancellationToken).ConfigureAwait(false);
-                var score = CalculateTrackScore(track, searchTerm);
-                yield return new SearchResult(trackGuid, score);
+                yield return new SearchResult(trackGuid, item.Score);
             }
         }
 
@@ -804,39 +809,85 @@ public sealed class MonochromeSearchProvider : IExternalSearchProvider
         }
 
         var s = searchTerm.Trim();
+        var title = (track.Title ?? string.Empty).Trim();
+        var artist = (track.Artists?.FirstOrDefault()?.Name ?? track.Artist?.Name ?? string.Empty).Trim();
+        var allArtists = track.Artists != null ? string.Join(" ", track.Artists.Select(a => a.Name)) : artist;
 
-        // 1. Exact title match -> top priority (100)
-        if (string.Equals(track.Title?.Trim(), s, StringComparison.OrdinalIgnoreCase))
+        var titleWithArtist = $"{title} {artist}".Trim();
+        var artistWithTitle = $"{artist} {title}".Trim();
+
+        // 1. Exact match with "Title Artist" or "Artist Title" (e.g. "Magnetic The Bausa" or "The Bausa Magnetic")
+        if (string.Equals(titleWithArtist, s, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(artistWithTitle, s, StringComparison.OrdinalIgnoreCase))
         {
             return 100f;
         }
 
-        // 2. Title starts with search term (96)
-        if (track.Title?.StartsWith(s, StringComparison.OrdinalIgnoreCase) == true)
+        // 2. Token-based matching: Check if search query contains BOTH the title and the artist
+        var delimiters = new[] { ' ', '-', '+', '/', ',', '.', '(', ')', '[', ']' };
+        var sTokens = s.Split(delimiters, StringSplitOptions.RemoveEmptyEntries);
+        var titleTokens = title.Split(delimiters, StringSplitOptions.RemoveEmptyEntries);
+        var artistTokens = allArtists.Split(delimiters, StringSplitOptions.RemoveEmptyEntries);
+
+        bool allTitleTokensInQuery = titleTokens.Length > 0 && titleTokens.All(t => s.Contains(t, StringComparison.OrdinalIgnoreCase));
+        bool anyArtistTokenInQuery = artistTokens.Length > 0 && artistTokens.Any(t => s.Contains(t, StringComparison.OrdinalIgnoreCase));
+        bool allArtistTokensInQuery = artistTokens.Length > 0 && artistTokens.All(t => s.Contains(t, StringComparison.OrdinalIgnoreCase));
+
+        // If user typed both title and artist tokens
+        if (allTitleTokensInQuery && allArtistTokensInQuery)
         {
-            return 96f;
+            return 99f;
+        }
+        if (allTitleTokensInQuery && anyArtistTokenInQuery)
+        {
+            return 98f;
         }
 
-        // 3. Artist exact match -> songs by this artist should rank high (93)
-        var artistName = track.Artists?.FirstOrDefault()?.Name ?? track.Artist?.Name;
-        if (!string.IsNullOrWhiteSpace(artistName) && string.Equals(artistName.Trim(), s, StringComparison.OrdinalIgnoreCase))
+        // 3. Exact Title match
+        if (string.Equals(title, s, StringComparison.OrdinalIgnoreCase))
         {
-            return 93f;
+            return 97f;
         }
 
-        // 4. Title contains search term (92)
-        if (track.Title?.Contains(s, StringComparison.OrdinalIgnoreCase) == true)
+        // 4. Exact Artist match
+        if (string.Equals(artist, s, StringComparison.OrdinalIgnoreCase) || string.Equals(allArtists, s, StringComparison.OrdinalIgnoreCase))
+        {
+            return 95f;
+        }
+
+        // 5. Title starts with search term
+        if (title.StartsWith(s, StringComparison.OrdinalIgnoreCase))
+        {
+            return 94f;
+        }
+
+        // 6. Title contains entire search term
+        if (title.Contains(s, StringComparison.OrdinalIgnoreCase))
         {
             return 92f;
         }
 
-        // 5. Artist contains search term (85)
-        if (!string.IsNullOrWhiteSpace(artistName) && artistName.Contains(s, StringComparison.OrdinalIgnoreCase))
+        // 7. Artist contains search term
+        if (allArtists.Contains(s, StringComparison.OrdinalIgnoreCase))
         {
-            return 85f;
+            return 90f;
         }
 
-        return 80f;
+        // 8. Search term starts with title
+        if (s.StartsWith(title, StringComparison.OrdinalIgnoreCase))
+        {
+            return 88f;
+        }
+
+        // 9. Match fraction of search tokens
+        int matchedTokens = sTokens.Count(st => title.Contains(st, StringComparison.OrdinalIgnoreCase) || allArtists.Contains(st, StringComparison.OrdinalIgnoreCase));
+        if (matchedTokens > 0)
+        {
+            float ratio = (float)matchedTokens / sTokens.Length;
+            return 75f + (ratio * 12f);
+        }
+
+        return 70f;
     }
 
     private static float CalculateScore(string? title, string searchTerm, float exactScore, float startsWithScore, float containsScore, float baseScore)
