@@ -8,8 +8,16 @@
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.2.0.0",
+        "changelog": "Integrazione nativa con la ricerca globale di Jellyfin 12.0 (ISearchProvider, IExternalSearchProvider, IMediaSourceProvider) accessibile a tutti gli utenti (base e admin). Rimosse tab e restrizioni di amministrazione.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/Jellyfin.Plugin.Monochrome_1.2.0.0.zip",
+        "checksum": "e09425802cc567f42d1a09ac664a44ea",
+        "timestamp": "2026-09-10T09:50:11Z"
+      },
+      {
         "version": "1.1.0.0",
-        "changelog": "Aggiunta interfaccia di ricerca libera nel menu principale di Jellyfin, sincronizzazione delle ricerche recenti nel Canale, e esportazione 1-click STRM nella libreria musicale.",
+        "changelog": "Aggiunta interfaccia di ricerca libera e sincronizzazione ricerche nel Canale.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/Jellyfin.Plugin.Monochrome_1.1.0.0.zip",
         "checksum": "00fe6b759e738b6183763bfc085050ca",
