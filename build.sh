@@ -20,7 +20,7 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="${1:-1.3.9.4}"
+VERSION="${1:-1.3.9.5}"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
 mkdir -p "$PACKAGE_DIR"
@@ -51,12 +51,20 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.3.9.5",
+        "changelog": "Novita Testi Karaoke & Mobile: 1) Cache-busting automatico (?v=1.3.9.5) su script e fogli di stile iniettati in index.html e JavaScript Injector: aggiornamento istantaneo senza svuotamento manuale cache browser. 2) Intercettazione automatica rotta nativa Jellyfin (#/lyrics): apertura istantanea modale Apple Music a tutto schermo evitando il blocco dello scorrimento touch nativo. 3) Scorrimento continuo fluido e auto-recentering garantito con min-height:0 su flex container e viewport dinamico (100dvh). 4) Mini-pulsante microfono integrato direttamente nella barra compatta mobile e hijack di ogni comando testi nativo.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.5.zip",
+        "checksum": "${MD5_CHECKSUM}",
+        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
         "version": "1.3.9.4",
         "changelog": "Novita Testi Karaoke e Mobile: 1) Risolto lo scorrimento dei testi (auto-scroll e sincronizzazione continua): rileva accuratamente il playback time da qualsiasi riproduttore HTML5 (audio, video, DASH) e da Jellyfin PlaybackManager; rimosso conflitto smooth-scroll CSS/JS e riallineamento istantaneo/fluido a centro schermo ad ogni cambio strofa. 2) Supporto Completo Mobile: sovrascritti i selettori CSS di Jellyfin che nascondevano i pulsanti su smartphone (.layout-mobile); aggiunto pulsante Testi nei controlli principali a schermo intero (.nowPlayingInfoButtons) e badge (.btnMonochromeLyricsBadge); pillola flottante ottimizzata con z-index 999999 e posizionamento sicuro. 3) Supporto esteso a tutti i formati di risposta testi (LRC raw con parser regex client-side, plainLyrics, Lyrics e lines/Lines).",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.4.zip",
-        "checksum": "${MD5_CHECKSUM}",
-        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        "checksum": "ecd425eb01454cd45b23bebfb5418150",
+        "timestamp": "2026-09-11T08:21:36Z"
       },
       {
         "version": "1.3.9.3",

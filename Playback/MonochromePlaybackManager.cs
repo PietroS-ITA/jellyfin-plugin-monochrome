@@ -643,18 +643,20 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                 return;
             }
 
+            var version = Plugin.Instance?.Version.ToString() ?? "1.3.9.5";
+
             dynamic payload = Activator.CreateInstance(jObjectType)!;
             payload["id"] = "monochrome-karaoke-ui";
             payload["name"] = "Monochrome Apple Music Karaoke & Lyrics";
-            payload["script"] = "(function(){if(!document.getElementById('monochrome-karaoke-loader')){var s=document.createElement('script');s.id='monochrome-karaoke-loader';s.src='/Monochrome/karaoke.js';s.defer=true;document.body.appendChild(s);var l=document.createElement('link');l.rel='stylesheet';l.href='/Monochrome/karaoke.css';document.head.appendChild(l);}})();";
+            payload["script"] = $"(function(){{if(!document.getElementById('monochrome-karaoke-loader')){{var s=document.createElement('script');s.id='monochrome-karaoke-loader';s.src='/Monochrome/karaoke.js?v={version}';s.defer=true;document.body.appendChild(s);var l=document.createElement('link');l.rel='stylesheet';l.href='/Monochrome/karaoke.css?v={version}';document.head.appendChild(l);}}}})();";
             payload["enabled"] = true;
             payload["requiresAuthentication"] = false;
             payload["pluginId"] = Plugin.Instance?.Id.ToString() ?? Guid.Empty.ToString();
             payload["pluginName"] = "Monochrome";
-            payload["pluginVersion"] = Plugin.Instance?.Version.ToString() ?? "1.3.9.4";
+            payload["pluginVersion"] = version;
 
             registerMethod.Invoke(null, new object[] { payload });
-            _logger.LogInformation("Monochrome Web: Programmatically registered Karaoke UI with JavaScript Injector plugin.");
+            _logger.LogInformation("Monochrome Web: Programmatically registered Karaoke UI v{Version} with JavaScript Injector plugin.", version);
         }
         catch (Exception ex)
         {
@@ -693,36 +695,37 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
         try
         {
             var content = File.ReadAllText(indexPath);
-            bool modified = false;
+            var version = Plugin.Instance?.Version.ToString() ?? "1.3.9.5";
+            var scriptTag = $"<script plugin=\"Monochrome\" src=\"/Monochrome/karaoke.js?v={version}\" defer></script>";
+            var styleTag = $"<link plugin=\"Monochrome\" rel=\"stylesheet\" href=\"/Monochrome/karaoke.css?v={version}\">";
 
-            const string scriptTag = "<script plugin=\"Monochrome\" src=\"/Monochrome/karaoke.js\" defer></script>";
-            const string styleTag = "<link plugin=\"Monochrome\" rel=\"stylesheet\" href=\"/Monochrome/karaoke.css\">";
-
-            if (!content.Contains("/Monochrome/karaoke.css", StringComparison.OrdinalIgnoreCase))
+            // If index.html already has the exact versioned tags, nothing to do
+            if (content.Contains(scriptTag, StringComparison.OrdinalIgnoreCase) &&
+                content.Contains(styleTag, StringComparison.OrdinalIgnoreCase))
             {
-                var headEnd = content.IndexOf("</head>", StringComparison.OrdinalIgnoreCase);
-                if (headEnd != -1)
-                {
-                    content = content.Insert(headEnd, styleTag);
-                    modified = true;
-                }
+                return;
             }
 
-            if (!content.Contains("/Monochrome/karaoke.js", StringComparison.OrdinalIgnoreCase))
+            // Clean up any legacy or previous version Monochrome tags
+            content = System.Text.RegularExpressions.Regex.Replace(content, @"<script[^>]*plugin=""Monochrome""[^>]*></script>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            content = System.Text.RegularExpressions.Regex.Replace(content, @"<script[^>]*src=""/Monochrome/karaoke\.js[^""]*""[^>]*></script>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            content = System.Text.RegularExpressions.Regex.Replace(content, @"<link[^>]*plugin=""Monochrome""[^>]*>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            content = System.Text.RegularExpressions.Regex.Replace(content, @"<link[^>]*href=""/Monochrome/karaoke\.css[^""]*""[^>]*>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            var headEnd = content.IndexOf("</head>", StringComparison.OrdinalIgnoreCase);
+            if (headEnd != -1)
             {
-                var bodyEnd = content.IndexOf("</body>", StringComparison.OrdinalIgnoreCase);
-                if (bodyEnd != -1)
-                {
-                    content = content.Insert(bodyEnd, scriptTag);
-                    modified = true;
-                }
+                content = content.Insert(headEnd, styleTag);
             }
 
-            if (modified)
+            var bodyEnd = content.IndexOf("</body>", StringComparison.OrdinalIgnoreCase);
+            if (bodyEnd != -1)
             {
-                File.WriteAllText(indexPath, content);
-                _logger.LogInformation("Monochrome Web: Successfully injected Karaoke UI into {Path}", indexPath);
+                content = content.Insert(bodyEnd, scriptTag);
             }
+
+            File.WriteAllText(indexPath, content);
+            _logger.LogInformation("Monochrome Web: Successfully injected Karaoke UI v{Version} into {Path}", version, indexPath);
         }
         catch (UnauthorizedAccessException)
         {

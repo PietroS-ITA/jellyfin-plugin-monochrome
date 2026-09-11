@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    console.log('[Monochrome] Apple Music Karaoke & Lyrics client v1.3.9.4 loaded.');
+    console.log('[Monochrome] Apple Music Karaoke & Lyrics client v1.3.9.5 loaded.');
 
     let currentLyrics = null;
     let currentLoadedKey = null;
@@ -255,11 +255,30 @@
             modal.classList.remove('active');
             isModalOpen = false;
         }
+
+        // If user arrived via native Jellyfin lyrics page/route, back out to avoid leaving empty page
+        const hash = window.location.hash || '';
+        if (hash.includes('lyrics') || hash.includes('lyricPage')) {
+            try {
+                history.back();
+            } catch (e) { }
+        }
     }
 
     function toggleModal() {
         if (isModalOpen) closeModal();
         else openModal();
+    }
+
+    function checkNativeLyricsRoute() {
+        const hash = window.location.hash || '';
+        const lyricPage = document.getElementById('lyricPage') || document.querySelector('.lyricPage');
+        if (hash.includes('lyrics') || hash.includes('lyricPage') || (lyricPage && lyricPage.offsetParent !== null)) {
+            if (!isModalOpen) {
+                console.log('[Monochrome] Native Jellyfin lyrics route/page detected. Opening Apple Music Karaoke UI.');
+                openModal();
+            }
+        }
     }
 
     function updateModalHeader() {
@@ -326,6 +345,22 @@
             }
         }
 
+        // B2. Dedicated mobile mini-bar mic button inside .nowPlayingBarText
+        const barText = document.querySelector('.nowPlayingBarText');
+        if (barText && !barText.querySelector('.btnMonochromeLyricsMini')) {
+            const miniBtn = document.createElement('button');
+            miniBtn.type = 'button';
+            miniBtn.className = 'btnMonochromeLyricsMini';
+            miniBtn.title = 'Testi Karaoke (Apple Music)';
+            miniBtn.innerHTML = '<span class="material-icons" style="font-size:16px;line-height:1;">mic</span>';
+            miniBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                toggleModal();
+            });
+            barText.appendChild(miniBtn);
+        }
+
         // C. Fullscreen mobile playback controls (.nowPlayingInfoButtons)
         const infoButtons = document.querySelector('.nowPlayingInfoButtons');
         if (infoButtons && !infoButtons.querySelector('.btnMonochromeLyricsNowPlaying')) {
@@ -377,21 +412,21 @@
             secondary.appendChild(btnPage);
         }
 
-        // F. Unhide and hijack Jellyfin native .openLyricsButton
-        const nativeLyricsBtn = document.querySelector('.openLyricsButton');
-        if (nativeLyricsBtn) {
-            nativeLyricsBtn.classList.remove('hide');
-            nativeLyricsBtn.style.display = 'inline-flex';
-            nativeLyricsBtn.title = 'Testi Karaoke (Apple Music)';
-            if (!nativeLyricsBtn.getAttribute('data-monochrome-hooked')) {
-                nativeLyricsBtn.setAttribute('data-monochrome-hooked', 'true');
-                nativeLyricsBtn.addEventListener('click', (e) => {
+        // F. Unhide and hijack ALL Jellyfin native lyrics buttons/links
+        const nativeLyricsBtns = document.querySelectorAll('.openLyricsButton, button[data-action="lyrics"], a[href*="lyrics"], .itemLyrics');
+        nativeLyricsBtns.forEach(btn => {
+            btn.classList.remove('hide');
+            btn.style.display = 'inline-flex';
+            btn.title = 'Testi Karaoke (Apple Music)';
+            if (!btn.getAttribute('data-monochrome-hooked')) {
+                btn.setAttribute('data-monochrome-hooked', 'true');
+                btn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     e.preventDefault();
                     toggleModal();
                 }, true);
             }
-        }
+        });
 
         // G. Floating dock pill button (guaranteed visible on any layout or screen size)
         ensureFloatingPillButton(active);
@@ -734,6 +769,20 @@
                     });
                 }
             }
+        } else if (!userHasScrolled && activeIdx >= 0 && scrollContainer) {
+            // Periodic gentle re-center if drifted significantly (e.g. window resize or long lyric)
+            const activeEl = document.getElementById(`monoLyric_${activeIdx}`);
+            if (activeEl) {
+                const cRect = scrollContainer.getBoundingClientRect();
+                const elRect = activeEl.getBoundingClientRect();
+                const diff = (elRect.top - cRect.top) - (cRect.height * 0.38);
+                if (Math.abs(diff) > 25) {
+                    scrollContainer.scrollTo({
+                        top: Math.max(0, scrollContainer.scrollTop + diff),
+                        behavior: 'smooth'
+                    });
+                }
+            }
         }
 
         // B. Continuous letter-by-letter & word-by-word animation on active line (60/120fps)
@@ -783,8 +832,9 @@
 
     // 7. Track change and playback change monitor
     function monitorPlaybackChanges() {
-        // Poll every 800ms for button injection and track updates
+        // Poll every 600ms for button injection, route check, and track updates
         setInterval(() => {
+            checkNativeLyricsRoute();
             injectLyricsButtons();
             if (isModalOpen) {
                 updateModalHeader();
@@ -794,13 +844,33 @@
                     loadLyrics();
                 }
             }
-        }, 800);
+        }, 600);
     }
+
+    // Route listeners
+    window.addEventListener('hashchange', checkNativeLyricsRoute);
+    window.addEventListener('popstate', checkNativeLyricsRoute);
 
     // Initial boot
     ensureModalDOMElements();
     injectLyricsButtons();
+    checkNativeLyricsRoute();
     monitorPlaybackChanges();
     syncLyricsLoop();
+
+    // DOM Mutation Observer for dynamic navigation & route changes
+    try {
+        let debounceTimeout = null;
+        const domObserver = new MutationObserver(() => {
+            if (!debounceTimeout) {
+                debounceTimeout = setTimeout(() => {
+                    debounceTimeout = null;
+                    checkNativeLyricsRoute();
+                    injectLyricsButtons();
+                }, 150);
+            }
+        });
+        domObserver.observe(document.body, { childList: true, subtree: true });
+    } catch (e) { }
 
 })();
