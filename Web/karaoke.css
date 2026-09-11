@@ -443,4 +443,109 @@
         margin-left: -8px !important;
         padding: 4px 10px !important;
     }
+
+    #lyricPage .lyricsContainer,
+    .lyricPage .lyricsContainer {
+        padding: 24vh 16px 36vh 16px !important;
+        gap: 20px !important;
+    }
+
+    #lyricPage .lyricsLine,
+    .lyricPage .lyricsLine {
+        font-size: clamp(20px, 5.2vw, 30px) !important;
+        padding: 4px 8px !important;
+    }
 }
+
+/* ==========================================================================
+   Apple Music Styling for Jellyfin Native Lyrics Page (#lyricPage)
+   ========================================================================== */
+#lyricPage,
+.lyricPage {
+    background: radial-gradient(circle at 50% 30%, rgba(30, 30, 48, 0.9) 0%, rgba(12, 12, 18, 0.98) 100%) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+#lyricPage .lyricsContainer,
+.lyricPage .lyricsContainer {
+    max-width: 850px !important;
+    margin: 0 auto !important;
+    padding: 32vh 24px 45vh 24px !important;
+    gap: 26px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+}
+
+#lyricPage .lyricsLine,
+.lyricPage .lyricsLine {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+    font-size: clamp(24px, 3.8vw, 38px) !important;
+    font-weight: 700 !important;
+    line-height: 1.35 !important;
+    letter-spacing: -0.3px !important;
+    color: rgba(255, 255, 255, 0.28) !important;
+    opacity: 1 !important;
+    min-height: auto !important;
+    margin: 3px 0 !important;
+    padding: 6px 14px !important;
+    border-radius: 12px !important;
+    cursor: pointer !important;
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), color 0.35s ease, filter 0.35s ease !important;
+    will-change: transform, color, filter !important;
+    user-select: none !important;
+    border: none !important;
+    background: transparent !important;
+    text-align: left !important;
+}
+
+#lyricPage .lyricsLine:hover,
+.lyricPage .lyricsLine:hover {
+    color: rgba(255, 255, 255, 0.75) !important;
+    transform: scale(1.02) !important;
+}
+
+/* Passed lines in native page */
+#lyricPage .lyricsLine.pastLyric,
+#lyricPage .lyricsLine.monochrome-native-past,
+.lyricPage .lyricsLine.pastLyric,
+.lyricPage .lyricsLine.monochrome-native-past {
+    color: rgba(255, 255, 255, 0.45) !important;
+    transform: scale(1) !important;
+}
+
+/* Active line in native page: Apple Music glow & scale */
+#lyricPage .lyricsLine.monochrome-native-active,
+#lyricPage .lyricsLine:not(.pastLyric):not(.futureLyric):not(:empty),
+.lyricPage .lyricsLine.monochrome-native-active,
+.lyricPage .lyricsLine:not(.pastLyric):not(.futureLyric):not(:empty) {
+    color: #ffffff !important;
+    transform: scale(1.05) !important;
+    transform-origin: left center !important;
+    filter: drop-shadow(0 0 16px rgba(255, 255, 255, 0.75)) drop-shadow(0 0 32px rgba(255, 255, 255, 0.4)) !important;
+}
+
+/* Upcoming lines in native page */
+#lyricPage .lyricsLine.futureLyric,
+.lyricPage .lyricsLine.futureLyric {
+    color: rgba(255, 255, 255, 0.25) !important;
+    transform: scale(1) !important;
+}
+
+/* Continuous letter-by-letter gradient wipe when active without syllable spans */
+.monochrome-lyric-line.active:not(:has(.mono-word)),
+#lyricPage .lyricsLine.monochrome-native-active:not(:has(.mono-word)) {
+    background: linear-gradient(
+        90deg,
+        #ffffff 0%,
+        #ffffff var(--line-progress, 0%),
+        rgba(255, 255, 255, 0.35) calc(var(--line-progress, 0%) + 0.5%),
+        rgba(255, 255, 255, 0.35) 100%
+    ) !important;
+    -webkit-background-clip: text !important;
+    background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    color: transparent !important;
+}
+

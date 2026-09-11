@@ -20,7 +20,7 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="${1:-1.3.9.5}"
+VERSION="${1:-1.3.9.6}"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
 mkdir -p "$PACKAGE_DIR"
@@ -51,12 +51,20 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.3.9.6",
+        "changelog": "Risoluzione Definitiva Scorrimento & Animazione Testi su Web, PC e Mobile: 1) Risolto il conflitto di smooth-scroll a 60fps che abortiva continuamente lo scorrimento automatico prima di muovere i testi: animazione fluida e centraggio perfetto garantiti al cambio strofa. 2) Motore temporale potenziato con passaggio esplicito del player su Jellyfin 10.9+/12.0 e fallback multicanale (HTML5, DASH, WebAudio). 3) Risolto il bug nativo di Jellyfin (b = NoScroll su touch/wheel): scorrimento automatico integrato sia sulla modale a schermo intero che sulla pagina nativa (#lyricPage). 4) Stile Apple Music (font SF Pro, bagliore fluorescente, sfocatura ambientale) applicato sia alla modale sia a #lyricPage. 5) Risoluzione dinamica dei tipi per auto-registrazione affidabile con il plugin JavaScript Injector.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.6.zip",
+        "checksum": "${MD5_CHECKSUM}",
+        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
         "version": "1.3.9.5",
         "changelog": "Novita Testi Karaoke & Mobile: 1) Cache-busting automatico (?v=1.3.9.5) su script e fogli di stile iniettati in index.html e JavaScript Injector: aggiornamento istantaneo senza svuotamento manuale cache browser. 2) Intercettazione automatica rotta nativa Jellyfin (#/lyrics): apertura istantanea modale Apple Music a tutto schermo evitando il blocco dello scorrimento touch nativo. 3) Scorrimento continuo fluido e auto-recentering garantito con min-height:0 su flex container e viewport dinamico (100dvh). 4) Mini-pulsante microfono integrato direttamente nella barra compatta mobile e hijack di ogni comando testi nativo.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.5.zip",
-        "checksum": "${MD5_CHECKSUM}",
-        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        "checksum": "77238bd119a9fe1fd309556861f93dac",
+        "timestamp": "2026-09-11T08:40:24Z"
       },
       {
         "version": "1.3.9.4",

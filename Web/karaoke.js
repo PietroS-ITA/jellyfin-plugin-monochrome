@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    console.log('[Monochrome] Apple Music Karaoke & Lyrics client v1.3.9.5 loaded.');
+    console.log('[Monochrome] Apple Music Karaoke & Lyrics client v1.3.9.6 loaded.');
 
     let currentLyrics = null;
     let currentLoadedKey = null;
@@ -9,6 +9,7 @@
     let userHasScrolled = false;
     let scrollTimeout = null;
     let lastActiveIdx = -1;
+    let lastNativeActiveLine = null;
 
     // Helper: Find active media element (audio, video, or player instance)
     function getActiveMediaElement() {
@@ -20,6 +21,7 @@
                 if (player) {
                     if (player._mediaElement) return player._mediaElement;
                     if (player.mediaElement) return player.mediaElement;
+                    if (player._currentMediaElement) return player._currentMediaElement;
                 }
             }
         } catch (e) { }
@@ -27,8 +29,10 @@
         const mediaElements = Array.from(document.querySelectorAll('audio, video, .mediaPlayerAudio, .htmlvideoplayer'));
         if (mediaElements.length > 0) {
             const active = mediaElements.find(m => !m.paused && m.currentTime > 0) ||
+                           mediaElements.find(m => !m.paused) ||
+                           mediaElements.find(m => !isNaN(m.duration) && m.duration > 0 && m.currentTime > 0) ||
                            mediaElements.find(m => !isNaN(m.duration) && m.duration > 0) ||
-                           mediaElements[0];
+                           mediaElements[mediaElements.length - 1];
             return active;
         }
 
@@ -37,20 +41,40 @@
 
     // Helper: Get high-accuracy playback time in seconds
     function getCurrentPlaybackTime() {
+        // 1. Check window.playbackManager passing the current player instance
+        try {
+            if (window.playbackManager) {
+                const player = (typeof window.playbackManager.getCurrentPlayer === 'function')
+                    ? window.playbackManager.getCurrentPlayer()
+                    : window.playbackManager._currentPlayer;
+
+                if (typeof window.playbackManager.currentTime === 'function') {
+                    const ms = player ? window.playbackManager.currentTime(player) : window.playbackManager.currentTime();
+                    if (!isNaN(ms) && ms > 0) {
+                        return ms / 1000.0;
+                    }
+                }
+
+                if (player) {
+                    if (typeof player.currentTime === 'function') {
+                        const val = player.currentTime();
+                        if (!isNaN(val) && val > 0) {
+                            return (val > 10000) ? val / 1000.0 : val;
+                        }
+                    } else if (player.currentTime !== undefined && !isNaN(player.currentTime) && player.currentTime > 0) {
+                        return (player.currentTime > 10000) ? player.currentTime / 1000.0 : player.currentTime;
+                    }
+                }
+            }
+        } catch (e) { }
+
+        // 2. Check direct HTML5 media element
         const media = getActiveMediaElement();
         if (media && !isNaN(media.currentTime) && media.currentTime > 0) {
             return media.currentTime;
         }
 
-        try {
-            if (window.playbackManager && typeof window.playbackManager.currentTime === 'function') {
-                const ms = window.playbackManager.currentTime();
-                if (!isNaN(ms) && ms > 0) {
-                    return ms / 1000.0;
-                }
-            }
-        } catch (e) { }
-
+        // 3. Fallback: media even if 0
         if (media && !isNaN(media.currentTime)) {
             return media.currentTime;
         }
@@ -258,7 +282,8 @@
 
         // If user arrived via native Jellyfin lyrics page/route, back out to avoid leaving empty page
         const hash = window.location.hash || '';
-        if (hash.includes('lyrics') || hash.includes('lyricPage')) {
+        const path = window.location.pathname || '';
+        if (hash.includes('lyric') || path.includes('lyric')) {
             try {
                 history.back();
             } catch (e) { }
@@ -270,12 +295,28 @@
         else openModal();
     }
 
-    function checkNativeLyricsRoute() {
+    function isLyricsPageActive() {
         const hash = window.location.hash || '';
+        const path = window.location.pathname || '';
+        const href = window.location.href || '';
+        if (hash.includes('lyric') || path.includes('lyric') || href.includes('lyric')) {
+            return true;
+        }
+
         const lyricPage = document.getElementById('lyricPage') || document.querySelector('.lyricPage');
-        if (hash.includes('lyrics') || hash.includes('lyricPage') || (lyricPage && lyricPage.offsetParent !== null)) {
+        if (lyricPage && !lyricPage.classList.contains('hide')) {
+            const style = window.getComputedStyle(lyricPage);
+            if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function checkNativeLyricsRoute() {
+        if (isLyricsPageActive()) {
             if (!isModalOpen) {
-                console.log('[Monochrome] Native Jellyfin lyrics route/page detected. Opening Apple Music Karaoke UI.');
+                console.log('[Monochrome] Lyrics page or route detected. Opening Apple Music Karaoke UI.');
                 openModal();
             }
         }
@@ -700,15 +741,74 @@
         });
     }
 
+    // Helper: Sync native Jellyfin lyrics page (#lyricPage) with smooth auto-scroll & Apple Music styling
+    function syncNativeLyricPage(currentTime) {
+        const lyricPage = document.getElementById('lyricPage') || document.querySelector('.lyricPage');
+        if (!lyricPage) return;
+        if (lyricPage.classList.contains('hide')) return;
+        const style = window.getComputedStyle(lyricPage);
+        if (style.display === 'none' || style.visibility === 'hidden') return;
+
+        const lines = lyricPage.querySelectorAll('.lyricsLine');
+        if (!lines || lines.length === 0) return;
+
+        let activeLine = null;
+        let activeIdx = -1;
+
+        for (let i = lines.length - 1; i >= 0; i--) {
+            const line = lines[i];
+            const rawTime = line.getAttribute('data-lyrictime');
+            if (rawTime !== null && rawTime !== '') {
+                const timeSec = Number(rawTime) / 10000000.0;
+                if (timeSec <= currentTime + 0.12) {
+                    activeLine = line;
+                    activeIdx = i;
+                    break;
+                }
+            }
+        }
+
+        if (!activeLine) {
+            activeLine = lyricPage.querySelector('.lyricsLine:not(.pastLyric):not(.futureLyric)') || lines[0];
+        }
+
+        if (activeLine) {
+            lines.forEach((l, idx) => {
+                if (l === activeLine) {
+                    l.classList.add('monochrome-native-active');
+                    l.classList.remove('monochrome-native-past', 'futureLyric', 'pastLyric');
+                } else if (activeIdx >= 0 && idx < activeIdx) {
+                    l.classList.remove('monochrome-native-active');
+                    l.classList.add('monochrome-native-past');
+                } else {
+                    l.classList.remove('monochrome-native-active', 'monochrome-native-past');
+                }
+            });
+
+            if (activeLine !== lastNativeActiveLine) {
+                lastNativeActiveLine = activeLine;
+                try {
+                    activeLine.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+                } catch (e) {
+                    try { activeLine.scrollIntoView(); } catch (e2) { }
+                }
+            }
+        }
+    }
+
     // 6. Time sync loop for Apple Music lyrics (Word-by-word & Letter-by-letter live fill)
     function syncLyricsLoop() {
         requestAnimationFrame(syncLyricsLoop);
 
+        const currentTime = getCurrentPlaybackTime();
+
+        // 1. Sync Jellyfin native lyrics page if active
+        syncNativeLyricPage(currentTime);
+
+        // 2. Sync Apple Music Karaoke Modal if open
         if (!isModalOpen || !currentLyrics || currentLyrics.length === 0) {
             return;
         }
-
-        const currentTime = getCurrentPlaybackTime();
 
         let activeIdx = -1;
         for (let i = currentLyrics.length - 1; i >= 0; i--) {
@@ -756,7 +856,7 @@
                 }
             });
 
-            // Smooth auto-scroll using getBoundingClientRect (works with transforms, padding, flexbox)
+            // Smooth auto-scroll ONLY on line change (prevents 60fps cancellation bug!)
             if (activeIdx >= 0 && scrollContainer) {
                 const activeEl = document.getElementById(`monoLyric_${activeIdx}`);
                 if (activeEl) {
@@ -766,20 +866,6 @@
                     scrollContainer.scrollTo({
                         top: Math.max(0, targetScroll),
                         behavior: isFirstSync ? 'auto' : 'smooth'
-                    });
-                }
-            }
-        } else if (!userHasScrolled && activeIdx >= 0 && scrollContainer) {
-            // Periodic gentle re-center if drifted significantly (e.g. window resize or long lyric)
-            const activeEl = document.getElementById(`monoLyric_${activeIdx}`);
-            if (activeEl) {
-                const cRect = scrollContainer.getBoundingClientRect();
-                const elRect = activeEl.getBoundingClientRect();
-                const diff = (elRect.top - cRect.top) - (cRect.height * 0.38);
-                if (Math.abs(diff) > 25) {
-                    scrollContainer.scrollTo({
-                        top: Math.max(0, scrollContainer.scrollTop + diff),
-                        behavior: 'smooth'
                     });
                 }
             }
@@ -847,9 +933,21 @@
         }, 600);
     }
 
-    // Route listeners
+    // Route & Resize listeners
     window.addEventListener('hashchange', checkNativeLyricsRoute);
     window.addEventListener('popstate', checkNativeLyricsRoute);
+    window.addEventListener('resize', () => {
+        if (isModalOpen && lastActiveIdx >= 0) {
+            const scrollContainer = document.getElementById('monochromeKaraokeScroll');
+            const activeEl = document.getElementById(`monoLyric_${lastActiveIdx}`);
+            if (scrollContainer && activeEl) {
+                const cRect = scrollContainer.getBoundingClientRect();
+                const elRect = activeEl.getBoundingClientRect();
+                const targetScroll = scrollContainer.scrollTop + (elRect.top - cRect.top) - (cRect.height * 0.38);
+                scrollContainer.scrollTo({ top: Math.max(0, targetScroll), behavior: 'auto' });
+            }
+        }
+    });
 
     // Initial boot
     ensureModalDOMElements();

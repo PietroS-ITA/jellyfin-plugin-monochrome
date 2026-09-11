@@ -73,6 +73,20 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
             _logger.LogDebug(ex, "JavaScript Injector registration encountered an issue");
         }
 
+        // Schedule periodic registration retries in background in case JavaScript Injector starts after Monochrome
+        _ = Task.Run(async () =>
+        {
+            for (int i = 1; i <= 4; i++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5 * i)).ConfigureAwait(false);
+                try
+                {
+                    RegisterWithJavaScriptInjector();
+                }
+                catch { }
+            }
+        });
+
         try
         {
             InjectWebClientScript();
@@ -617,7 +631,10 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
     {
         try
         {
-            var injectorAsm = AppDomain.CurrentDomain.GetAssemblies()
+            var injectorAsm = System.Runtime.Loader.AssemblyLoadContext.All
+                .SelectMany(x => x.Assemblies)
+                .FirstOrDefault(a => a.GetName().Name?.Equals("Jellyfin.Plugin.JavaScriptInjector", StringComparison.OrdinalIgnoreCase) == true)
+                ?? AppDomain.CurrentDomain.GetAssemblies()
                 .FirstOrDefault(a => a.GetName().Name?.Equals("Jellyfin.Plugin.JavaScriptInjector", StringComparison.OrdinalIgnoreCase) == true);
 
             if (injectorAsm == null)
@@ -637,26 +654,39 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                 return;
             }
 
-            var jObjectType = Type.GetType("Newtonsoft.Json.Linq.JObject, Newtonsoft.Json");
-            if (jObjectType == null)
+            var paramType = registerMethod.GetParameters().FirstOrDefault()?.ParameterType;
+            if (paramType == null)
             {
                 return;
             }
 
-            var version = Plugin.Instance?.Version.ToString() ?? "1.3.9.5";
+            var version = Plugin.Instance?.Version.ToString() ?? "1.3.9.6";
+            var scriptJs = $"(function(){{if(!document.getElementById('monochrome-karaoke-loader')){{var s=document.createElement('script');s.id='monochrome-karaoke-loader';s.src='/Monochrome/karaoke.js?v={version}';s.defer=true;document.body.appendChild(s);var l=document.createElement('link');l.rel='stylesheet';l.href='/Monochrome/karaoke.css?v={version}';document.head.appendChild(l);}}}})();";
 
-            dynamic payload = Activator.CreateInstance(jObjectType)!;
-            payload["id"] = "monochrome-karaoke-ui";
-            payload["name"] = "Monochrome Apple Music Karaoke & Lyrics";
-            payload["script"] = $"(function(){{if(!document.getElementById('monochrome-karaoke-loader')){{var s=document.createElement('script');s.id='monochrome-karaoke-loader';s.src='/Monochrome/karaoke.js?v={version}';s.defer=true;document.body.appendChild(s);var l=document.createElement('link');l.rel='stylesheet';l.href='/Monochrome/karaoke.css?v={version}';document.head.appendChild(l);}}}})();";
-            payload["enabled"] = true;
-            payload["requiresAuthentication"] = false;
-            payload["pluginId"] = Plugin.Instance?.Id.ToString() ?? Guid.Empty.ToString();
-            payload["pluginName"] = "Monochrome";
-            payload["pluginVersion"] = version;
+            var parseMethod = paramType.GetMethod("Parse", BindingFlags.Public | BindingFlags.Static, new[] { typeof(string) });
+            object? payload = null;
 
-            registerMethod.Invoke(null, new object[] { payload });
-            _logger.LogInformation("Monochrome Web: Programmatically registered Karaoke UI v{Version} with JavaScript Injector plugin.", version);
+            if (parseMethod != null)
+            {
+                var payloadJson = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    id = "monochrome-karaoke-ui",
+                    name = "Monochrome Apple Music Karaoke & Lyrics",
+                    script = scriptJs,
+                    enabled = true,
+                    requiresAuthentication = false,
+                    pluginId = Plugin.Instance?.Id.ToString() ?? Guid.Empty.ToString(),
+                    pluginName = "Monochrome",
+                    pluginVersion = version
+                });
+                payload = parseMethod.Invoke(null, new object[] { payloadJson });
+            }
+
+            if (payload != null)
+            {
+                var result = registerMethod.Invoke(null, new object[] { payload });
+                _logger.LogInformation("Monochrome Web: Programmatically registered Karaoke UI v{Version} with JavaScript Injector plugin. Result: {Result}", version, result);
+            }
         }
         catch (Exception ex)
         {
@@ -695,7 +725,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
         try
         {
             var content = File.ReadAllText(indexPath);
-            var version = Plugin.Instance?.Version.ToString() ?? "1.3.9.5";
+            var version = Plugin.Instance?.Version.ToString() ?? "1.3.9.6";
             var scriptTag = $"<script plugin=\"Monochrome\" src=\"/Monochrome/karaoke.js?v={version}\" defer></script>";
             var styleTag = $"<link plugin=\"Monochrome\" rel=\"stylesheet\" href=\"/Monochrome/karaoke.css?v={version}\">";
 
