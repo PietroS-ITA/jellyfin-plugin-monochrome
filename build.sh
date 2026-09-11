@@ -20,7 +20,7 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="${1:-1.3.9.3}"
+VERSION="${1:-1.3.9.4}"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
 mkdir -p "$PACKAGE_DIR"
@@ -51,12 +51,20 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.3.9.4",
+        "changelog": "Novita Testi Karaoke e Mobile: 1) Risolto lo scorrimento dei testi (auto-scroll e sincronizzazione continua): rileva accuratamente il playback time da qualsiasi riproduttore HTML5 (audio, video, DASH) e da Jellyfin PlaybackManager; rimosso conflitto smooth-scroll CSS/JS e riallineamento istantaneo/fluido a centro schermo ad ogni cambio strofa. 2) Supporto Completo Mobile: sovrascritti i selettori CSS di Jellyfin che nascondevano i pulsanti su smartphone (.layout-mobile); aggiunto pulsante Testi nei controlli principali a schermo intero (.nowPlayingInfoButtons) e badge (.btnMonochromeLyricsBadge); pillola flottante ottimizzata con z-index 999999 e posizionamento sicuro. 3) Supporto esteso a tutti i formati di risposta testi (LRC raw con parser regex client-side, plainLyrics, Lyrics e lines/Lines).",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.4.zip",
+        "checksum": "${MD5_CHECKSUM}",
+        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
         "version": "1.3.9.3",
         "changelog": "Novita Testi Karaoke Apple Music Sing: 1) Animazione progressiva continua lettera-per-lettera e parola-per-parola (60/120fps) con riempimento fluido a gradiente in tempo reale sincronizzato con la voce. 2) Effetto rimbalzo dinamico (bounce) e luminescenza fluorescente sulla parola cantata. 3) Supporto sia a Enhanced LRC (<mm:ss.xx> per parola) sia interpolazione automatica con pesatura proporzionale dei caratteri per LRC standard. 4) Sfondo copertina dinamico con animazione fluida 'breathing' e sfocatura Apple Music. 5) Interazione click-to-seek sia su riga che su singola parola.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.3.zip",
-        "checksum": "${MD5_CHECKSUM}",
-        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        "checksum": "babcd218bda1d76b0a98c797407b8988",
+        "timestamp": "2026-09-11T07:38:55Z"
       },
       {
         "version": "1.3.9.2",

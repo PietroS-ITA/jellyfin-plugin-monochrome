@@ -651,7 +651,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
             payload["requiresAuthentication"] = false;
             payload["pluginId"] = Plugin.Instance?.Id.ToString() ?? Guid.Empty.ToString();
             payload["pluginName"] = "Monochrome";
-            payload["pluginVersion"] = Plugin.Instance?.Version.ToString() ?? "1.3.9.3";
+            payload["pluginVersion"] = Plugin.Instance?.Version.ToString() ?? "1.3.9.4";
 
             registerMethod.Invoke(null, new object[] { payload });
             _logger.LogInformation("Monochrome Web: Programmatically registered Karaoke UI with JavaScript Injector plugin.");
