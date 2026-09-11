@@ -106,17 +106,30 @@
 }
 
 /* Dynamic Animated Blurred Cover Art Backdrop */
+@keyframes monoBackdropPulse {
+    0% {
+        transform: scale(1.15) rotate(0deg);
+    }
+    50% {
+        transform: scale(1.24) rotate(1.2deg);
+    }
+    100% {
+        transform: scale(1.15) rotate(0deg);
+    }
+}
+
 #monochromeKaraokeBackdrop {
     position: absolute;
-    top: -60px;
-    left: -60px;
-    right: -60px;
-    bottom: -60px;
+    top: -80px;
+    left: -80px;
+    right: -80px;
+    bottom: -80px;
     background-size: cover;
     background-position: center;
-    filter: blur(90px) brightness(0.35) saturate(190%);
+    filter: blur(85px) brightness(0.38) saturate(200%);
     transform: scale(1.15);
-    transition: background-image 0.7s ease-in-out;
+    transition: background-image 0.8s ease-in-out;
+    animation: monoBackdropPulse 25s ease-in-out infinite alternate;
     will-change: transform, filter;
 }
 
@@ -225,7 +238,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-size: clamp(26px, 3.8vw, 42px);
     font-weight: 700;
-    line-height: 1.32;
+    line-height: 1.35;
     letter-spacing: -0.4px;
     color: rgba(255, 255, 255, 0.28);
     cursor: pointer;
@@ -234,7 +247,7 @@
     margin-left: -16px;
     width: fit-content;
     max-width: 90%;
-    transition: all 0.35s cubic-bezier(0.2, 0, 0, 1);
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease, filter 0.4s ease;
     user-select: none;
     will-change: transform, color, opacity;
 }
@@ -245,15 +258,86 @@
 }
 
 .monochrome-lyric-line.active {
-    color: #ffffff !important;
+    color: #ffffff;
     transform: scale(1.05);
     transform-origin: left center;
-    text-shadow: 0 0 28px rgba(255, 255, 255, 0.7);
     opacity: 1 !important;
+    filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.25));
 }
 
 .monochrome-lyric-line.passed {
-    color: rgba(255, 255, 255, 0.45);
+    color: rgba(255, 255, 255, 0.42);
+    transform: scale(1);
+}
+
+/* Plain text fallback when line does not contain .mono-word spans */
+.monochrome-lyric-line.active:not(:has(.mono-word)) {
+    color: #ffffff !important;
+    text-shadow: 0 0 28px rgba(255, 255, 255, 0.7);
+}
+
+/* ==========================================================================
+   Apple Music Word-by-word & Letter-by-letter Syllable Karaoke Fill
+   ========================================================================== */
+
+.mono-word {
+    display: inline-block;
+    position: relative;
+    cursor: pointer;
+    border-radius: 6px;
+    padding: 0 1px;
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), filter 0.18s ease;
+    transform-origin: bottom center;
+    will-change: transform, filter, background;
+    white-space: pre-wrap;
+    word-break: keep-all;
+}
+
+/* In non-active lines (upcoming & passed) */
+.monochrome-lyric-line:not(.active) .mono-word {
+    color: inherit;
+    -webkit-text-fill-color: inherit;
+}
+
+/* In active line: upcoming words wait in translucent dim state */
+.monochrome-lyric-line.active .mono-word {
+    color: rgba(255, 255, 255, 0.35);
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.35);
+}
+
+/* In active line: CURRENT word being sung
+   Continuous letter-by-letter gradient wipe fill in real-time at 60/120fps + elevation bounce & glowing halo */
+.monochrome-lyric-line.active .mono-word.word-active {
+    background: linear-gradient(
+        90deg,
+        #ffffff 0%,
+        #ffffff var(--word-progress, 0%),
+        rgba(255, 255, 255, 0.35) calc(var(--word-progress, 0%) + 0.5%),
+        rgba(255, 255, 255, 0.35) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent !important;
+    color: transparent !important;
+    transform: translateY(-3px) scale(1.08);
+    filter: drop-shadow(0 0 16px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 32px rgba(255, 255, 255, 0.5));
+}
+
+/* In active line: words already sung stay fully illuminated white */
+.monochrome-lyric-line.active .mono-word.word-passed {
+    background: none !important;
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    transform: translateY(0) scale(1);
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.5));
+}
+
+/* Word hover interaction */
+.mono-word:hover {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    transform: translateY(-2px) scale(1.08) !important;
+    filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.85)) !important;
 }
 
 /* Empty / Loading State */

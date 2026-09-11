@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    console.log('[Monochrome] Apple Music Karaoke & Lyrics client v1.3.9.2 loaded.');
+    console.log('[Monochrome] Apple Music Karaoke & Lyrics client v1.3.9.3 loaded.');
 
     let currentLyrics = null;
     let currentLoadedKey = null;
@@ -300,6 +300,67 @@
         });
     }
 
+    // Helper: Parse words and timestamps (Enhanced LRC tags or character-weighted distribution)
+    function parseLineWords(rawText, lineStartTime, lineEndTime) {
+        if (!rawText) return [];
+
+        // Check for Enhanced LRC tags: <mm:ss.xx>word
+        const enhancedTagRegex = /<(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?>/g;
+        if (enhancedTagRegex.test(rawText)) {
+            enhancedTagRegex.lastIndex = 0;
+            const parts = [];
+            let match;
+            while ((match = enhancedTagRegex.exec(rawText)) !== null) {
+                const mins = parseInt(match[1], 10);
+                const secs = parseInt(match[2], 10);
+                let ms = 0;
+                if (match[3]) {
+                    let msStr = match[3];
+                    if (msStr.length === 2) msStr += '0';
+                    ms = parseInt(msStr, 10);
+                }
+                const tagTime = (mins * 60) + secs + (ms / 1000.0);
+                if (parts.length > 0) parts[parts.length - 1].end = tagTime;
+
+                const afterTagIdx = match.index + match[0].length;
+                const nextMatch = rawText.slice(afterTagIdx).match(/<(\d{1,2}):(\d{2})/);
+                const wordEndIdx = nextMatch ? afterTagIdx + nextMatch.index : rawText.length;
+                const wordText = rawText.slice(afterTagIdx, wordEndIdx).trim();
+
+                if (wordText) {
+                    parts.push({ text: wordText, start: tagTime, end: tagTime + 0.6 });
+                }
+            }
+            if (parts.length > 0) {
+                parts[parts.length - 1].end = Math.max(parts[parts.length - 1].start + 0.4, lineEndTime);
+                return parts;
+            }
+        }
+
+        // Standard LRC: Distribute word timings proportionally based on character count
+        const cleanText = rawText.replace(/<[^>]+>/g, '').trim();
+        const rawWords = cleanText.split(/\s+/).filter(w => w.length > 0);
+        if (rawWords.length === 0) return [];
+
+        const rawDuration = Math.max(0.6, lineEndTime - lineStartTime);
+        const estimatedSungDuration = Math.min(rawDuration, Math.max(1.5, cleanText.length * 0.18));
+        const totalChars = rawWords.reduce((sum, w) => sum + Math.max(1, w.length), 0);
+
+        let curTime = lineStartTime;
+        return rawWords.map((word) => {
+            const charWeight = Math.max(1, word.length);
+            const wordDur = (charWeight / totalChars) * estimatedSungDuration;
+            const wStart = curTime;
+            const wEnd = wStart + wordDur;
+            curTime = wEnd;
+            return {
+                text: word,
+                start: Math.round(wStart * 100) / 100,
+                end: Math.round(wEnd * 100) / 100
+            };
+        });
+    }
+
     // 5. Fetch and render lyrics with search fallback
     async function loadLyrics() {
         const scrollContainer = document.getElementById('monochromeKaraokeScroll');
@@ -363,25 +424,56 @@
             lines = rawLines.map((t, idx) => ({ time: idx * 5, text: t.trim() })).filter(l => l.text);
         }
 
+        if (lines.length === 0) {
+            scrollContainer.innerHTML = '<div class="monochrome-karaoke-empty">Nessun testo sincronizzato disponibile.</div>';
+            currentLyrics = null;
+            return;
+        }
+
+        // Calculate line end times and individual word timings for Apple Music syllable fill
+        lines.forEach((l, idx) => {
+            const nextTime = (idx < lines.length - 1) ? lines[idx + 1].time : (l.time + 4.0);
+            const rawDur = Math.max(0.5, nextTime - l.time);
+            const clean = (l.text || '').replace(/<[^>]+>/g, '').trim();
+            const estDur = Math.min(rawDur, Math.max(1.5, clean.length * 0.18));
+            l.endTime = l.time + estDur;
+            l.words = parseLineWords(l.text, l.time, l.endTime);
+        });
+
         currentLyrics = lines;
         currentLoadedKey = dedupeKey;
         lastActiveIdx = -1;
 
-        if (lines.length === 0) {
-            scrollContainer.innerHTML = '<div class="monochrome-karaoke-empty">Nessun testo sincronizzato disponibile.</div>';
-            return;
-        }
-
-        // Render line items
+        // Render line items with word spans
         scrollContainer.innerHTML = '';
         lines.forEach((l, idx) => {
             const div = document.createElement('div');
             div.className = 'monochrome-lyric-line';
             div.id = `monoLyric_${idx}`;
             div.setAttribute('data-time', l.time);
-            div.textContent = l.text;
 
-            // Interactive seek-on-click
+            if (l.words && l.words.length > 0) {
+                l.words.forEach((w, wIdx) => {
+                    const span = document.createElement('span');
+                    span.className = 'mono-word';
+                    span.id = `monoWord_${idx}_${wIdx}`;
+                    span.textContent = w.text;
+                    span.setAttribute('data-start', w.start);
+                    span.setAttribute('data-end', w.end);
+                    span.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        seekAudioTo(w.start);
+                    });
+                    div.appendChild(span);
+                    if (wIdx < l.words.length - 1) {
+                        div.appendChild(document.createTextNode(' '));
+                    }
+                });
+            } else {
+                div.textContent = (l.text || '').replace(/<[^>]+>/g, '').trim();
+            }
+
+            // Interactive seek-on-click for line
             div.addEventListener('click', () => {
                 seekAudioTo(l.time);
             });
@@ -400,7 +492,7 @@
         }
     }
 
-    // 6. Time sync loop for Apple Music lyrics
+    // 6. Time sync loop for Apple Music lyrics (Word-by-word & Letter-by-letter live fill)
     function syncLyricsLoop() {
         requestAnimationFrame(syncLyricsLoop);
 
@@ -415,44 +507,100 @@
 
         let activeIdx = -1;
         for (let i = currentLyrics.length - 1; i >= 0; i--) {
-            if (currentLyrics[i].time <= currentTime + 0.15) {
+            if (currentLyrics[i].time <= currentTime + 0.12) {
                 activeIdx = i;
                 break;
             }
         }
 
-        if (activeIdx === lastActiveIdx) {
-            return;
+        // A. Handle line changes (active/passed states & smooth auto-centering)
+        if (activeIdx !== lastActiveIdx) {
+            lastActiveIdx = activeIdx;
+            const scrollContainer = document.getElementById('monochromeKaraokeScroll');
+
+            currentLyrics.forEach((_, idx) => {
+                const el = document.getElementById(`monoLyric_${idx}`);
+                if (!el) return;
+
+                if (idx === activeIdx) {
+                    el.classList.add('active');
+                    el.classList.remove('passed');
+                } else if (idx < activeIdx) {
+                    el.classList.remove('active');
+                    el.classList.add('passed');
+                    el.style.removeProperty('--line-progress');
+                    // Mark passed words as 100% lit
+                    const words = el.querySelectorAll('.mono-word');
+                    words.forEach(w => {
+                        w.classList.remove('word-active');
+                        w.classList.add('word-passed');
+                        w.style.setProperty('--word-progress', '100%');
+                    });
+                } else {
+                    el.classList.remove('active', 'passed');
+                    el.style.removeProperty('--line-progress');
+                    // Reset upcoming words
+                    const words = el.querySelectorAll('.mono-word');
+                    words.forEach(w => {
+                        w.classList.remove('word-active', 'word-passed');
+                        w.style.setProperty('--word-progress', '0%');
+                    });
+                }
+            });
+
+            if (activeIdx >= 0 && !userHasScrolled && scrollContainer) {
+                const activeEl = document.getElementById(`monoLyric_${activeIdx}`);
+                if (activeEl) {
+                    const targetScroll = activeEl.offsetTop - (scrollContainer.clientHeight * 0.38);
+                    scrollContainer.scrollTo({
+                        top: Math.max(0, targetScroll),
+                        behavior: 'smooth'
+                    });
+                }
+            }
         }
 
-        lastActiveIdx = activeIdx;
-        const scrollContainer = document.getElementById('monochromeKaraokeScroll');
-        if (!scrollContainer) return;
-
-        currentLyrics.forEach((_, idx) => {
-            const el = document.getElementById(`monoLyric_${idx}`);
-            if (!el) return;
-
-            if (idx === activeIdx) {
-                el.classList.add('active');
-                el.classList.remove('passed');
-            } else if (idx < activeIdx) {
-                el.classList.remove('active');
-                el.classList.add('passed');
-            } else {
-                el.classList.remove('active');
-                el.classList.remove('passed');
-            }
-        });
-
-        if (activeIdx >= 0 && !userHasScrolled) {
+        // B. Continuous letter-by-letter & word-by-word animation on active line (60/120fps)
+        if (activeIdx >= 0 && currentLyrics[activeIdx]) {
+            const activeLine = currentLyrics[activeIdx];
             const activeEl = document.getElementById(`monoLyric_${activeIdx}`);
             if (activeEl) {
-                const targetScroll = activeEl.offsetTop - (scrollContainer.clientHeight * 0.4);
-                scrollContainer.scrollTo({
-                    top: Math.max(0, targetScroll),
-                    behavior: 'smooth'
-                });
+                const lineStart = activeLine.time;
+                const lineEnd = activeLine.endTime || (lineStart + 3.5);
+                const lineDur = Math.max(0.1, lineEnd - lineStart);
+                const lineProg = Math.max(0, Math.min(1, (currentTime - lineStart) / lineDur));
+                activeEl.style.setProperty('--line-progress', (lineProg * 100).toFixed(1) + '%');
+
+                if (activeLine.words && activeLine.words.length > 0) {
+                    activeLine.words.forEach((w, wIdx) => {
+                        const wEl = document.getElementById(`monoWord_${activeIdx}_${wIdx}`);
+                        if (!wEl) return;
+
+                        if (currentTime >= w.end) {
+                            // Word passed: fully illuminated solid white
+                            if (!wEl.classList.contains('word-passed')) {
+                                wEl.classList.remove('word-active');
+                                wEl.classList.add('word-passed');
+                            }
+                            wEl.style.setProperty('--word-progress', '100%');
+                        } else if (currentTime >= w.start) {
+                            // Word currently being sung: progressive fill & glowing lift
+                            if (!wEl.classList.contains('word-active')) {
+                                wEl.classList.add('word-active');
+                                wEl.classList.remove('word-passed');
+                            }
+                            const wDur = Math.max(0.04, w.end - w.start);
+                            const wProg = Math.max(0, Math.min(1, (currentTime - w.start) / wDur));
+                            wEl.style.setProperty('--word-progress', (wProg * 100).toFixed(1) + '%');
+                        } else {
+                            // Word upcoming: translucent
+                            if (wEl.classList.contains('word-active') || wEl.classList.contains('word-passed')) {
+                                wEl.classList.remove('word-active', 'word-passed');
+                            }
+                            wEl.style.setProperty('--word-progress', '0%');
+                        }
+                    });
+                }
             }
         }
     }

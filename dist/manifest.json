@@ -8,6 +8,14 @@
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.3.9.3",
+        "changelog": "Novita Testi Karaoke Apple Music Sing: 1) Animazione progressiva continua lettera-per-lettera e parola-per-parola (60/120fps) con riempimento fluido a gradiente in tempo reale sincronizzato con la voce. 2) Effetto rimbalzo dinamico (bounce) e luminescenza fluorescente sulla parola cantata. 3) Supporto sia a Enhanced LRC (<mm:ss.xx> per parola) sia interpolazione automatica con pesatura proporzionale dei caratteri per LRC standard. 4) Sfondo copertina dinamico con animazione fluida 'breathing' e sfocatura Apple Music. 5) Interazione click-to-seek sia su riga che su singola parola.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/Jellyfin.Plugin.Monochrome_1.3.9.3.zip",
+        "checksum": "babcd218bda1d76b0a98c797407b8988",
+        "timestamp": "2026-09-11T07:38:55Z"
+      },
+      {
         "version": "1.3.9.2",
         "changelog": "1) Risolto definitivamente il problema del tasto Stop: azzeramento immediato e totale di tutte le code radio su stop manuale e prevenzione autoplay se il brano e interrotto prima della fine fisica reale (entro 2.5s). 2) Supporto nativo integrato ai Testi (MediaStreamType.Lyric e generazione file .lrc): Jellyfin ora mostra il pulsante testi sincronizzati nativo su Web, Mobile, Android, iOS e Desktop senza bisogno di plugin esterni. 3) Supporto e auto-registrazione dinamica con il plugin 'JavaScript Injector' per UI Apple Music e pillola flottante.",
         "targetAbi": "12.0.0.0",
