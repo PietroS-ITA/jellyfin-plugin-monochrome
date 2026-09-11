@@ -147,34 +147,40 @@
 
 .monochrome-lyrics-floating-pill .pill-icon {
     font-size: 17px;
-    line-height: 1;
-}
-
 /* Fullscreen Apple Music Karaoke Modal */
 #monochromeKaraokeModal {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 72px) !important;
     width: 100vw;
     width: 100%;
-    height: 100vh;
-    height: 100dvh;
-    z-index: 999999;
-    display: flex;
+    z-index: 999990 !important;
+    display: none !important;
     flex-direction: column;
     overflow: hidden;
     opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    transform: scale(1.02);
+    pointer-events: none !important;
+    background: #0d0d14 !important;
+    background: radial-gradient(circle at 50% 30%, rgba(28, 25, 42, 0.98) 0%, rgba(10, 10, 15, 0.99) 100%) !important;
+    backdrop-filter: blur(50px) saturate(180%);
+    -webkit-backdrop-filter: blur(50px) saturate(180%);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    transform: translateY(16px);
 }
 
 #monochromeKaraokeModal.active {
-    opacity: 1;
-    pointer-events: auto;
-    transform: scale(1);
+    display: flex !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: translateY(0);
+}
+
+/* Ensure Bottom Player Bar is ALWAYS Accessible and above the modal */
+.nowPlayingBar {
+    z-index: 1000002 !important;
+    pointer-events: auto !important;
 }
 
 /* Dynamic Animated Blurred Cover Art Backdrop */
@@ -260,24 +266,27 @@
 }
 
 .monochrome-karaoke-close {
-    width: 42px;
-    height: 42px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    color: #ffffff;
+    background: rgba(255, 255, 255, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    color: #ffffff !important;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 18px;
+    font-size: 22px;
     font-weight: 700;
     cursor: pointer;
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(16px);
     transition: all 0.2s ease;
+    z-index: 50;
+    flex-shrink: 0;
+    pointer-events: auto !important;
 }
 
 .monochrome-karaoke-close:hover {
-    background: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.45);
     transform: scale(1.1);
 }
 
@@ -460,8 +469,14 @@
 /* ==========================================================================
    Apple Music Styling for Jellyfin Native Lyrics Page (#lyricPage)
    ========================================================================== */
-#lyricPage,
-.lyricPage {
+#lyricPage.hide,
+.lyricPage.hide {
+    display: none !important;
+    pointer-events: none !important;
+}
+
+#lyricPage:not(.hide),
+.lyricPage:not(.hide) {
     background: radial-gradient(circle at 50% 30%, rgba(30, 30, 48, 0.9) 0%, rgba(12, 12, 18, 0.98) 100%) !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;

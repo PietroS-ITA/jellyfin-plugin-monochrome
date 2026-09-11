@@ -20,7 +20,7 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="${1:-1.3.9.6}"
+VERSION="${1:-1.3.9.7}"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
 mkdir -p "$PACKAGE_DIR"
@@ -51,12 +51,20 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.3.9.7",
+        "changelog": "Novità e correzioni UI Testi: 1) Risolta l'apertura indesiderata sopra le pagine di navigazione e ricerca: rimosso il loop di auto-apertura da background e mutation observer; la modale si apre solo su click esplicito dell'utente o su navigazione diretta alla rotta testi. 2) Barra di riproduzione sempre accessibile e cliccabile (z-index 1000002): play/pause, stop, skip, traccia e volume non vengono mai coperti ne bloccati dai testi. 3) Sfondo opaco Apple Music Acrylic ad alto contrasto per la modale: eliminata la trasparenza che faceva intravedere le schede degli album sottostanti. 4) Pulsante di chiusura (X) ingrandito, ad alto contrasto e sempre in primo piano.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.7.zip",
+        "checksum": "${MD5_CHECKSUM}",
+        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
         "version": "1.3.9.6",
         "changelog": "Risoluzione Definitiva Scorrimento & Animazione Testi su Web, PC e Mobile: 1) Risolto il conflitto di smooth-scroll a 60fps che abortiva continuamente lo scorrimento automatico prima di muovere i testi: animazione fluida e centraggio perfetto garantiti al cambio strofa. 2) Motore temporale potenziato con passaggio esplicito del player su Jellyfin 10.9+/12.0 e fallback multicanale (HTML5, DASH, WebAudio). 3) Risolto il bug nativo di Jellyfin (b = NoScroll su touch/wheel): scorrimento automatico integrato sia sulla modale a schermo intero che sulla pagina nativa (#lyricPage). 4) Stile Apple Music (font SF Pro, bagliore fluorescente, sfocatura ambientale) applicato sia alla modale sia a #lyricPage. 5) Risoluzione dinamica dei tipi per auto-registrazione affidabile con il plugin JavaScript Injector.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.6.zip",
-        "checksum": "${MD5_CHECKSUM}",
-        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        "checksum": "a61233d7e16e7e7ad0786e28eef1ee07",
+        "timestamp": "2026-09-11T12:38:58Z"
       },
       {
         "version": "1.3.9.5",

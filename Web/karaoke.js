@@ -1,11 +1,12 @@
 (function () {
     'use strict';
 
-    console.log('[Monochrome] Apple Music Karaoke & Lyrics client v1.3.9.6 loaded.');
+    console.log('[Monochrome] Apple Music Karaoke & Lyrics client v1.3.9.7 loaded.');
 
     let currentLyrics = null;
     let currentLoadedKey = null;
     let isModalOpen = false;
+    let userClosedModal = false;
     let userHasScrolled = false;
     let scrollTimeout = null;
     let lastActiveIdx = -1;
@@ -267,6 +268,7 @@
         if (modal) {
             modal.classList.add('active');
             isModalOpen = true;
+            userClosedModal = false;
             userHasScrolled = false;
             updateModalHeader();
             loadLyrics();
@@ -278,12 +280,13 @@
         if (modal) {
             modal.classList.remove('active');
             isModalOpen = false;
+            userClosedModal = true;
         }
 
         // If user arrived via native Jellyfin lyrics page/route, back out to avoid leaving empty page
-        const hash = window.location.hash || '';
-        const path = window.location.pathname || '';
-        if (hash.includes('lyric') || path.includes('lyric')) {
+        const hash = (window.location.hash || '').toLowerCase();
+        const path = (window.location.pathname || '').toLowerCase();
+        if (hash.includes('lyrics') || path.endsWith('/lyrics')) {
             try {
                 history.back();
             } catch (e) { }
@@ -295,29 +298,23 @@
         else openModal();
     }
 
-    function isLyricsPageActive() {
-        const hash = window.location.hash || '';
-        const path = window.location.pathname || '';
-        const href = window.location.href || '';
-        if (hash.includes('lyric') || path.includes('lyric') || href.includes('lyric')) {
-            return true;
-        }
-
-        const lyricPage = document.getElementById('lyricPage') || document.querySelector('.lyricPage');
-        if (lyricPage && !lyricPage.classList.contains('hide')) {
-            const style = window.getComputedStyle(lyricPage);
-            if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
-                return true;
-            }
-        }
-        return false;
-    }
-
     function checkNativeLyricsRoute() {
-        if (isLyricsPageActive()) {
-            if (!isModalOpen) {
-                console.log('[Monochrome] Lyrics page or route detected. Opening Apple Music Karaoke UI.');
+        const hash = (window.location.hash || '').toLowerCase();
+        const path = (window.location.pathname || '').toLowerCase();
+        const isExplicitLyricsRoute = hash.includes('lyrics') || path.endsWith('/lyrics');
+
+        if (isExplicitLyricsRoute) {
+            if (!userClosedModal && !isModalOpen) {
+                console.log('[Monochrome] Explicit lyrics route detected. Opening Apple Music Karaoke UI.');
                 openModal();
+            }
+        } else {
+            // User navigated to another route (home, search, album, etc.)
+            userClosedModal = false;
+            if (isModalOpen) {
+                const modal = document.getElementById('monochromeKaraokeModal');
+                if (modal) modal.classList.remove('active');
+                isModalOpen = false;
             }
         }
     }
@@ -918,9 +915,8 @@
 
     // 7. Track change and playback change monitor
     function monitorPlaybackChanges() {
-        // Poll every 600ms for button injection, route check, and track updates
+        // Poll every 600ms for button injection and track updates if modal is open
         setInterval(() => {
-            checkNativeLyricsRoute();
             injectLyricsButtons();
             if (isModalOpen) {
                 updateModalHeader();
@@ -952,20 +948,18 @@
     // Initial boot
     ensureModalDOMElements();
     injectLyricsButtons();
-    checkNativeLyricsRoute();
     monitorPlaybackChanges();
     syncLyricsLoop();
 
-    // DOM Mutation Observer for dynamic navigation & route changes
+    // DOM Mutation Observer for dynamic button injection across pages
     try {
         let debounceTimeout = null;
         const domObserver = new MutationObserver(() => {
             if (!debounceTimeout) {
                 debounceTimeout = setTimeout(() => {
                     debounceTimeout = null;
-                    checkNativeLyricsRoute();
                     injectLyricsButtons();
-                }, 150);
+                }, 200);
             }
         });
         domObserver.observe(document.body, { childList: true, subtree: true });
