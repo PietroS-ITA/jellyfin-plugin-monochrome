@@ -20,7 +20,7 @@ echo "=== Building Jellyfin.Plugin.Monochrome with $($DOTNET_BIN --version) ==="
 OUTPUT_DIR="$SCRIPT_DIR/bin/Release/net10.0"
 DIST_DIR="$SCRIPT_DIR/dist"
 PLUGIN_NAME="Jellyfin.Plugin.Monochrome"
-VERSION="${1:-1.3.9.7}"
+VERSION="${1:-1.3.9.8}"
 PACKAGE_DIR="$DIST_DIR/${PLUGIN_NAME}_${VERSION}"
 
 mkdir -p "$PACKAGE_DIR"
@@ -51,12 +51,20 @@ cat <<EOF > "$DIST_DIR/manifest.json"
     "category": "Live TV & Channels / Music",
     "versions": [
       {
+        "version": "1.3.9.8",
+        "changelog": "Risoluzione apertura testi e stabilità UI: 1) Risolto bug critico sintassi CSS (parentesi graffa non chiusa su .pill-icon) che annullava il posizionamento fixed della modale testi impedendone l'apertura a video al click. 2) Forzatura visuale inline prioritaria in JavaScript (display flex !important, opacity 1, pointer-events auto) per garantire l'apertura istantanea su qualsiasi browser/dispositivo. 3) Gestione robusta eventi di apertura/chiusura con cattura prioritaria (capture) su tutti i pulsanti microfono e pillola flottante.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.8.zip",
+        "checksum": "${MD5_CHECKSUM}",
+        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      },
+      {
         "version": "1.3.9.7",
         "changelog": "Novità e correzioni UI Testi: 1) Risolta l'apertura indesiderata sopra le pagine di navigazione e ricerca: rimosso il loop di auto-apertura da background e mutation observer; la modale si apre solo su click esplicito dell'utente o su navigazione diretta alla rotta testi. 2) Barra di riproduzione sempre accessibile e cliccabile (z-index 1000002): play/pause, stop, skip, traccia e volume non vengono mai coperti ne bloccati dai testi. 3) Sfondo opaco Apple Music Acrylic ad alto contrasto per la modale: eliminata la trasparenza che faceva intravedere le schede degli album sottostanti. 4) Pulsante di chiusura (X) ingrandito, ad alto contrasto e sempre in primo piano.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://raw.githubusercontent.com/PietroS-ITA/jellyfin-plugin-monochrome/main/dist/${PLUGIN_NAME}_1.3.9.7.zip",
-        "checksum": "${MD5_CHECKSUM}",
-        "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        "checksum": "cf6899009b05276f4ee4ad53bf78cace",
+        "timestamp": "2026-09-11T14:35:40Z"
       },
       {
         "version": "1.3.9.6",

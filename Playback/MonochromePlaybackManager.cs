@@ -660,7 +660,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
                 return;
             }
 
-            var version = Plugin.Instance?.Version.ToString() ?? "1.3.9.7";
+            var version = Plugin.Instance?.Version.ToString() ?? "1.3.9.8";
             var scriptJs = $"(function(){{if(!document.getElementById('monochrome-karaoke-loader')){{var s=document.createElement('script');s.id='monochrome-karaoke-loader';s.src='/Monochrome/karaoke.js?v={version}';s.defer=true;document.body.appendChild(s);var l=document.createElement('link');l.rel='stylesheet';l.href='/Monochrome/karaoke.css?v={version}';document.head.appendChild(l);}}}})();";
 
             var parseMethod = paramType.GetMethod("Parse", BindingFlags.Public | BindingFlags.Static, new[] { typeof(string) });
@@ -725,7 +725,7 @@ public sealed class MonochromePlaybackManager : IHostedService, IDisposable
         try
         {
             var content = File.ReadAllText(indexPath);
-            var version = Plugin.Instance?.Version.ToString() ?? "1.3.9.7";
+            var version = Plugin.Instance?.Version.ToString() ?? "1.3.9.8";
             var scriptTag = $"<script plugin=\"Monochrome\" src=\"/Monochrome/karaoke.js?v={version}\" defer></script>";
             var styleTag = $"<link plugin=\"Monochrome\" rel=\"stylesheet\" href=\"/Monochrome/karaoke.css?v={version}\">";
 

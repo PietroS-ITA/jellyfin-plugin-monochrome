@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    console.log('[Monochrome] Apple Music Karaoke & Lyrics client v1.3.9.7 loaded.');
+    console.log('[Monochrome] Apple Music Karaoke & Lyrics client v1.3.9.8 loaded.');
 
     let currentLyrics = null;
     let currentLoadedKey = null;
@@ -143,13 +143,22 @@
             return true;
         }
 
+        const details = getCurrentTrackDetails();
+        if (details && details.title) {
+            return true;
+        }
+
         return false;
     }
 
     // 1. DOM modal initialization
     function ensureModalDOMElements() {
-        if (document.getElementById('monochromeKaraokeModal')) {
-            return;
+        const existing = document.getElementById('monochromeKaraokeModal');
+        if (existing) {
+            return existing;
+        }
+        if (!document.body) {
+            return null;
         }
 
         const modal = document.createElement('div');
@@ -175,9 +184,18 @@
         document.body.appendChild(modal);
 
         // Close handlers
-        document.getElementById('monochromeKaraokeClose').addEventListener('click', closeModal);
+        const closeBtn = document.getElementById('monochromeKaraokeClose');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                closeModal();
+            }, true);
+        }
         modal.addEventListener('click', (e) => {
             if (e.target === modal || e.target.id === 'monochromeKaraokeOverlay') {
+                e.stopPropagation();
+                e.preventDefault();
                 closeModal();
             }
         });
@@ -263,24 +281,50 @@
     }
 
     function openModal() {
-        ensureModalDOMElements();
-        const modal = document.getElementById('monochromeKaraokeModal');
+        console.log('[Monochrome] openModal called');
+        let modal = document.getElementById('monochromeKaraokeModal');
+        if (!modal) {
+            modal = ensureModalDOMElements();
+        }
         if (modal) {
             modal.classList.add('active');
+            modal.style.setProperty('display', 'flex', 'important');
+            modal.style.setProperty('opacity', '1', 'important');
+            modal.style.setProperty('pointer-events', 'auto', 'important');
+            modal.style.setProperty('transform', 'translateY(0)', 'important');
+            modal.style.setProperty('visibility', 'visible', 'important');
             isModalOpen = true;
             userClosedModal = false;
             userHasScrolled = false;
+
+            const pill = document.getElementById('monochromeLyricsFloatingPill');
+            if (pill) {
+                pill.classList.remove('visible');
+                pill.style.setProperty('display', 'none', 'important');
+            }
+
             updateModalHeader();
             loadLyrics();
+        } else {
+            console.error('[Monochrome] Could not open modal: DOM element not ready');
         }
     }
 
     function closeModal() {
+        console.log('[Monochrome] closeModal called');
         const modal = document.getElementById('monochromeKaraokeModal');
         if (modal) {
             modal.classList.remove('active');
-            isModalOpen = false;
-            userClosedModal = true;
+            modal.style.setProperty('display', 'none', 'important');
+            modal.style.setProperty('opacity', '0', 'important');
+            modal.style.setProperty('pointer-events', 'none', 'important');
+            modal.style.setProperty('visibility', 'hidden', 'important');
+        }
+        isModalOpen = false;
+        userClosedModal = true;
+
+        if (isPlaybackActive()) {
+            ensureFloatingPillButton(true);
         }
 
         // If user arrived via native Jellyfin lyrics page/route, back out to avoid leaving empty page
@@ -294,8 +338,14 @@
     }
 
     function toggleModal() {
-        if (isModalOpen) closeModal();
-        else openModal();
+        console.log('[Monochrome] toggleModal called');
+        const modal = document.getElementById('monochromeKaraokeModal');
+        const currentlyVisible = isModalOpen || (modal && (modal.classList.contains('active') || modal.style.display === 'flex'));
+        if (currentlyVisible) {
+            closeModal();
+        } else {
+            openModal();
+        }
     }
 
     function checkNativeLyricsRoute() {
@@ -312,9 +362,7 @@
             // User navigated to another route (home, search, album, etc.)
             userClosedModal = false;
             if (isModalOpen) {
-                const modal = document.getElementById('monochromeKaraokeModal');
-                if (modal) modal.classList.remove('active');
-                isModalOpen = false;
+                closeModal();
             }
         }
     }
@@ -351,8 +399,9 @@
             btnCenter.innerHTML = '<span class="material-icons" style="font-size:22px;line-height:1;">mic</span>';
             btnCenter.addEventListener('click', (e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 toggleModal();
-            });
+            }, true);
 
             const nextBtn = center.querySelector('.nextTrackButton, .ButtonNextTrack');
             if (nextBtn && nextBtn.nextSibling) {
@@ -372,8 +421,9 @@
             btnRight.innerHTML = '<span class="material-icons" style="font-size:22px;line-height:1;">mic</span>';
             btnRight.addEventListener('click', (e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 toggleModal();
-            });
+            }, true);
 
             const nextBtn = right.querySelector('.nextTrackButton, .ButtonNextTrack');
             if (nextBtn && nextBtn.nextSibling) {
@@ -395,7 +445,7 @@
                 e.stopPropagation();
                 e.preventDefault();
                 toggleModal();
-            });
+            }, true);
             barText.appendChild(miniBtn);
         }
 
@@ -409,8 +459,9 @@
             btnNowPlaying.innerHTML = '<span class="material-icons" style="font-size:26px;line-height:1;">mic</span>';
             btnNowPlaying.addEventListener('click', (e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 toggleModal();
-            });
+            }, true);
 
             const playPause = infoButtons.querySelector('.btnPlayPause, .playPauseButton');
             if (playPause && playPause.nextSibling) {
@@ -430,8 +481,9 @@
             badge.innerHTML = '<span class="material-icons" style="font-size:16px;line-height:1;">mic</span> <span>Testi</span>';
             badge.addEventListener('click', (e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 toggleModal();
-            });
+            }, true);
             titleContainer.appendChild(badge);
         }
 
@@ -445,8 +497,9 @@
             btnPage.innerHTML = '<span class="material-icons" style="margin-right:6px;">mic</span> <span>Testi</span>';
             btnPage.addEventListener('click', (e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 toggleModal();
-            });
+            }, true);
             secondary.appendChild(btnPage);
         }
 
@@ -476,6 +529,7 @@
     function ensureFloatingPillButton(isAudioActive) {
         let pill = document.getElementById('monochromeLyricsFloatingPill');
         if (!pill) {
+            if (!document.body) return;
             pill = document.createElement('button');
             pill.id = 'monochromeLyricsFloatingPill';
             pill.type = 'button';
@@ -484,15 +538,18 @@
             pill.innerHTML = '<span class="pill-icon">🎤</span> <span class="pill-text">Testi</span>';
             pill.addEventListener('click', (e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 toggleModal();
-            });
+            }, true);
             document.body.appendChild(pill);
         }
 
         if (isAudioActive && !isModalOpen) {
             pill.classList.add('visible');
+            pill.style.setProperty('display', 'inline-flex', 'important');
         } else {
             pill.classList.remove('visible');
+            pill.style.setProperty('display', 'none', 'important');
         }
     }
 
@@ -946,23 +1003,33 @@
     });
 
     // Initial boot
-    ensureModalDOMElements();
-    injectLyricsButtons();
-    monitorPlaybackChanges();
-    syncLyricsLoop();
+    function startPlugin() {
+        ensureModalDOMElements();
+        injectLyricsButtons();
+        monitorPlaybackChanges();
+        syncLyricsLoop();
 
-    // DOM Mutation Observer for dynamic button injection across pages
-    try {
-        let debounceTimeout = null;
-        const domObserver = new MutationObserver(() => {
-            if (!debounceTimeout) {
-                debounceTimeout = setTimeout(() => {
-                    debounceTimeout = null;
-                    injectLyricsButtons();
-                }, 200);
+        // DOM Mutation Observer for dynamic button injection across pages
+        try {
+            let debounceTimeout = null;
+            const domObserver = new MutationObserver(() => {
+                if (!debounceTimeout) {
+                    debounceTimeout = setTimeout(() => {
+                        debounceTimeout = null;
+                        injectLyricsButtons();
+                    }, 200);
+                }
+            });
+            if (document.body) {
+                domObserver.observe(document.body, { childList: true, subtree: true });
             }
-        });
-        domObserver.observe(document.body, { childList: true, subtree: true });
-    } catch (e) { }
+        } catch (e) { }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', startPlugin);
+    } else {
+        startPlugin();
+    }
 
 })();
